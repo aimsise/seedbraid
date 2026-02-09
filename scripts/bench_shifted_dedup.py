@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import random
 import tempfile
 from pathlib import Path
-import random
 
 from helix.chunking import ChunkerConfig
 from helix.codec import encode_file, prime_genome
 
 
-def run_case(chunker: str, cfg: ChunkerConfig, base: Path, shifted: Path, tmp: Path) -> tuple[dict, int]:
+def run_case(
+    chunker: str,
+    cfg: ChunkerConfig,
+    base: Path,
+    shifted: Path,
+    tmp: Path,
+) -> tuple[dict, int]:
     genome = tmp / f"genome-{chunker}"
     seed = tmp / f"shifted-{chunker}.hlx"
 
@@ -28,7 +34,11 @@ def run_case(chunker: str, cfg: ChunkerConfig, base: Path, shifted: Path, tmp: P
         "total_chunks": encode_stats.total_chunks,
         "reused_chunks": encode_stats.reused_chunks,
         "new_chunks": encode_stats.new_chunks,
-        "reuse_ratio": 0 if encode_stats.total_chunks == 0 else encode_stats.reused_chunks / encode_stats.total_chunks,
+        "reuse_ratio": (
+            0
+            if encode_stats.total_chunks == 0
+            else encode_stats.reused_chunks / encode_stats.total_chunks
+        ),
     }, seed.stat().st_size
 
 
@@ -48,8 +58,16 @@ def main() -> None:
         cdc_stats, cdc_seed_size = run_case("cdc_buzhash", cfg, base, shifted, tdir)
 
         print("== 1-byte insertion dedup benchmark ==")
-        print(f"fixed      reuse_ratio={fixed_stats['reuse_ratio']:.4f} new_chunks={fixed_stats['new_chunks']} seed_size={fixed_seed_size}")
-        print(f"cdc_buzhash reuse_ratio={cdc_stats['reuse_ratio']:.4f} new_chunks={cdc_stats['new_chunks']} seed_size={cdc_seed_size}")
+        print(
+            "fixed      "
+            f"reuse_ratio={fixed_stats['reuse_ratio']:.4f} "
+            f"new_chunks={fixed_stats['new_chunks']} seed_size={fixed_seed_size}"
+        )
+        print(
+            "cdc_buzhash "
+            f"reuse_ratio={cdc_stats['reuse_ratio']:.4f} "
+            f"new_chunks={cdc_stats['new_chunks']} seed_size={cdc_seed_size}"
+        )
 
 
 if __name__ == "__main__":

@@ -9,50 +9,71 @@ Helix v2 provides reference-based reconstruction with deterministic content-defi
 - HLX1 binary seed container (`manifest + recipe + optional RAW + integrity`).
 - IPFS CLI integration (`publish`, `fetch`).
 
+## Best-Fit Use Cases
+- Large binary versioning: datasets, ML models, media assets, and VM images.
+- Distribution of many similar files: share a common genome and distribute compact seeds.
+- IPFS-based distribution and retrieval: distribute by CID and verify reconstruction integrity.
+- Shift-heavy changes (for example, single-byte insertion): CDC improves reuse over fixed chunking.
+
+## What It Takes for OSS Adoption
+- A 5-minute onboarding path (installation + first encode/decode tutorial).
+- Benchmark evidence that Helix wins against alternatives on size, transfer time, and restore speed.
+- Security and operations readiness: signing/encryption and operator tooling (`doctor`, `snapshot`, `restore`).
+- Stable format governance and backward-compatibility policy for long-lived seed archives.
+
 ## Quick Start
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
+uv sync --no-editable --extra dev
 ```
 
 Optional zstd support:
 ```bash
-pip install -e .[dev,zstd]
+uv sync --no-editable --extra dev --extra zstd
+```
+
+Refresh lockfile after dependency changes:
+```bash
+uv lock
 ```
 
 ## CLI
 ### Encode
 ```bash
-helix encode input.bin --genome ./genome --out seed.hlx \
+uv run --no-editable helix encode input.bin --genome ./genome --out seed.hlx \
   --chunker cdc_buzhash --avg 65536 --min 16384 --max 262144 \
   --learn --no-portable --compression zlib
 ```
 
 ### Decode
 ```bash
-helix decode seed.hlx --genome ./genome --out recovered.bin
+uv run --no-editable helix decode seed.hlx --genome ./genome --out recovered.bin
 ```
 
 ### Verify
 ```bash
-helix verify seed.hlx --genome ./genome
+uv run --no-editable helix verify seed.hlx --genome ./genome
 ```
 
 ### Prime
 ```bash
-helix prime "./dataset/**/*" --genome ./genome --chunker cdc_buzhash
+uv run --no-editable helix prime "./dataset/**/*" --genome ./genome --chunker cdc_buzhash
 ```
 
 ### Publish (IPFS)
 ```bash
-helix publish seed.hlx --no-pin
-helix publish seed.hlx --pin
+uv run --no-editable helix publish seed.hlx --no-pin
+uv run --no-editable helix publish seed.hlx --pin
 ```
 
 ### Fetch (IPFS)
 ```bash
-helix fetch <cid> --out fetched.hlx
+uv run --no-editable helix fetch <cid> --out fetched.hlx
+```
+
+### Export / Import Genes (optional)
+```bash
+uv run --no-editable helix export-genes seed.hlx --genome ./genome --out genes.pack
+uv run --no-editable helix import-genes genes.pack --genome ./another-genome
 ```
 
 ## IPFS Installation/Check
@@ -73,8 +94,8 @@ If missing, install Kubo (IPFS CLI) and ensure `ipfs` is on your PATH.
 
 ## Tests and CI-Equivalent Local Commands
 ```bash
-ruff check .
-pytest
+uv run --no-editable ruff check .
+uv run --no-editable pytest
 ```
 
 IPFS tests auto-skip when `ipfs` is not installed.
@@ -82,7 +103,7 @@ IPFS tests auto-skip when `ipfs` is not installed.
 ## 1-byte Insertion Dedup Benchmark
 Run:
 ```bash
-python scripts/bench_shifted_dedup.py
+uv run --no-editable python scripts/bench_shifted_dedup.py
 ```
 
 Expected behavior:

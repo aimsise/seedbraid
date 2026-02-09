@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 
 from .chunking import ChunkerConfig
-from .codec import decode_file, encode_file, prime_genome, verify_seed
+from .codec import decode_file, encode_file, export_genes, import_genes, prime_genome, verify_seed
 from .errors import ExternalToolError, HelixError
 from .ipfs import fetch_seed, publish_seed
 
@@ -17,7 +17,12 @@ def _cfg(avg: int, min_size: int, max_size: int, window_size: int = 64) -> Chunk
         raise typer.BadParameter("Chunk sizes must be > 0")
     if not (min_size <= avg <= max_size):
         raise typer.BadParameter("Require min <= avg <= max")
-    return ChunkerConfig(min_size=min_size, avg_size=avg, max_size=max_size, window_size=window_size)
+    return ChunkerConfig(
+        min_size=min_size,
+        avg_size=avg,
+        max_size=max_size,
+        window_size=window_size,
+    )
 
 
 @app.command()
@@ -81,7 +86,9 @@ def verify(
 
     if report.ok:
         typer.echo(
-            f"verify ok expected_sha256={report.expected_sha256} actual_sha256={report.actual_sha256}"
+            "verify ok "
+            f"expected_sha256={report.expected_sha256} "
+            f"actual_sha256={report.actual_sha256}"
         )
         raise typer.Exit(code=0)
 
@@ -149,6 +156,35 @@ def fetch(
     except (HelixError, ExternalToolError) as exc:
         raise typer.Exit(code=_print_error(exc))
     typer.echo(f"fetched {cid} -> {out}")
+
+
+@app.command("export-genes")
+def export_genes_cmd(
+    seed: Path,
+    genome: Path = typer.Option(..., "--genome"),
+    out: Path = typer.Option(..., "--out"),
+) -> None:
+    """Export seed-related chunk payloads from genome into genes pack."""
+    try:
+        stats = export_genes(seed, genome, out)
+    except HelixError as exc:
+        raise typer.Exit(code=_print_error(exc))
+    typer.echo(
+        f"exported total={stats['total']} exported={stats['exported']} missing={stats['missing']}"
+    )
+
+
+@app.command("import-genes")
+def import_genes_cmd(
+    pack: Path,
+    genome: Path = typer.Option(..., "--genome"),
+) -> None:
+    """Import chunk payloads from genes pack into genome."""
+    try:
+        stats = import_genes(pack, genome)
+    except HelixError as exc:
+        raise typer.Exit(code=_print_error(exc))
+    typer.echo(f"imported inserted={stats['inserted']} skipped={stats['skipped']}")
 
 
 def _print_error(exc: Exception) -> int:

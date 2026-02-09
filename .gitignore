@@ -9,11 +9,11 @@ Thumbs.db
 venv/
 .uv-cache/
 .python-version
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
 .hypothesis/
 .coverage
 .coverage.*
@@ -22,7 +22,7 @@ htmlcov/
 # Build / packaging artifacts
 build/
 dist/
-*.egg-info/
+**/*.egg-info/
 .eggs/
 pip-wheel-metadata/
 
