@@ -60,3 +60,8 @@ Migration policy:
   - synthetic chunk provider interface keyed by recipe metadata.
 - Registry layer:
   - map logical seed names to CIDs (ENS or on-chain pointer) as separate module.
+
+## Optional Gene Transport
+- Implemented minimal `export-genes` / `import-genes` for operational recovery.
+- Purpose: move required chunk payloads between genomes without shipping full databases.
+- Trade-off: no compression/encryption in initial format; can be layered later if needed.

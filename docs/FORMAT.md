@@ -87,3 +87,14 @@ UTF-8 JSON with:
 ## Versioning
 - Backward-incompatible changes require `version` increment and docs update.
 - New optional sections may be added via TLV without changing version.
+
+## Genes Pack (Optional Utility Format)
+For `helix export-genes` / `helix import-genes`, Helix defines a small sidecar binary format:
+- magic: 5 bytes, ASCII `GENE1`
+- count: uint32
+- repeated `count` times:
+  - hash: 32 bytes (sha256)
+  - size: uint32
+  - payload: `size` bytes
+
+If `size == 0`, payload is absent (export side could not find this chunk in genome).

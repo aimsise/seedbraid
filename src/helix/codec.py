@@ -11,6 +11,8 @@ from .container import OP_RAW, OP_REF, Recipe, RecipeOp, read_seed, write_seed
 from .errors import DecodeError, HelixError
 from .storage import open_genome
 
+GENES_MAGIC = b"GENE1"
+
 
 @dataclass(frozen=True)
 class EncodeStats:
@@ -147,7 +149,12 @@ def encode_file(
         genome.close()
 
 
-def _resolve_chunk(op: RecipeOp, hash_table: list[bytes], raw_payloads: dict[int, bytes], genome) -> bytes:
+def _resolve_chunk(
+    op: RecipeOp,
+    hash_table: list[bytes],
+    raw_payloads: dict[int, bytes],
+    genome,
+) -> bytes:
     if op.hash_index >= len(hash_table):
         raise DecodeError("Recipe refers to hash index out of bounds.")
     digest = hash_table[op.hash_index]
@@ -286,7 +293,10 @@ def prime_genome(
                 if genome.put_chunk(digest, chunk):
                     new_chunks += 1
 
-        dedup_ratio = 0 if total_chunks == 0 else int(((total_chunks - new_chunks) / total_chunks) * 10_000)
+        if total_chunks == 0:
+            dedup_ratio = 0
+        else:
+            dedup_ratio = int(((total_chunks - new_chunks) / total_chunks) * 10_000)
         return {
             "files": len(files),
             "total_chunks": total_chunks,
@@ -296,3 +306,68 @@ def prime_genome(
         }
     finally:
         genome.close()
+
+
+def export_genes(
+    seed_path: str | Path,
+    genome_path: str | Path,
+    out_path: str | Path,
+) -> dict[str, int]:
+    seed = read_seed(seed_path)
+    genome = open_genome(genome_path)
+    out_path = Path(out_path)
+    exported = 0
+    missing = 0
+
+    try:
+        with out_path.open("wb") as out:
+            out.write(GENES_MAGIC)
+            out.write(len(seed.recipe.hash_table).to_bytes(4, "big"))
+            for digest in seed.recipe.hash_table:
+                chunk = genome.get_chunk(digest)
+                if chunk is None:
+                    missing += 1
+                    out.write(digest)
+                    out.write((0).to_bytes(4, "big"))
+                    continue
+                exported += 1
+                out.write(digest)
+                out.write(len(chunk).to_bytes(4, "big"))
+                out.write(chunk)
+    finally:
+        genome.close()
+
+    return {"total": len(seed.recipe.hash_table), "exported": exported, "missing": missing}
+
+
+def import_genes(pack_path: str | Path, genome_path: str | Path) -> dict[str, int]:
+    pack_path = Path(pack_path)
+    genome = open_genome(genome_path)
+    inserted = 0
+    skipped = 0
+
+    try:
+        with pack_path.open("rb") as inp:
+            magic = inp.read(len(GENES_MAGIC))
+            if magic != GENES_MAGIC:
+                raise HelixError("Invalid genes pack magic. Expected GENE1.")
+            count = int.from_bytes(inp.read(4), "big")
+            for _ in range(count):
+                digest = inp.read(32)
+                if len(digest) != 32:
+                    raise HelixError("Truncated genes pack hash entry.")
+                size = int.from_bytes(inp.read(4), "big")
+                chunk = inp.read(size)
+                if len(chunk) != size:
+                    raise HelixError("Truncated genes pack payload entry.")
+                if size == 0:
+                    skipped += 1
+                    continue
+                if genome.put_chunk(digest, chunk):
+                    inserted += 1
+                else:
+                    skipped += 1
+    finally:
+        genome.close()
+
+    return {"inserted": inserted, "skipped": skipped}

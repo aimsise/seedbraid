@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from math import log2
 from typing import BinaryIO
 
-
 MASK64 = (1 << 64) - 1
 
 
@@ -22,8 +21,7 @@ def _iter_bytes(stream: BinaryIO, read_size: int = 65_536) -> Iterator[int]:
         block = stream.read(read_size)
         if not block:
             return
-        for value in block:
-            yield value
+        yield from block
 
 
 def _mask_from_avg(avg_size: int) -> int:
