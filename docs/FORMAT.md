@@ -78,6 +78,10 @@ UTF-8 JSON with:
 - `manifest_crc32`: int (crc32 over entire Manifest section payload)
 - `recipe_crc32`: int (crc32 over Recipe section payload)
 - `payload_crc32`: int (crc32 over container bytes from start through end of last non-integrity section)
+- `manifest_sha256`: hex string (sha256 over Manifest section payload)
+- `recipe_sha256`: hex string (sha256 over Recipe section payload)
+- `payload_sha256`: hex string (sha256 over container bytes from start through end of last non-integrity section)
+- `raw_crc32` / `raw_sha256`: optional, present when RAW section exists
 
 ## Decode/Verify Requirements
 - Parser must validate magic/version and integrity section.

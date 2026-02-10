@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import struct
 import zlib
@@ -153,6 +154,10 @@ def _pack_section(stype: int, payload: bytes) -> bytes:
     return struct.pack(">HQ", stype, len(payload)) + payload
 
 
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def serialize_seed(
     manifest: dict,
     recipe: Recipe,
@@ -171,8 +176,10 @@ def serialize_seed(
         (SECTION_MANIFEST, manifest_payload),
         (SECTION_RECIPE, recipe_payload),
     ]
+    raw_section_payload: bytes | None = None
     if raw_payloads:
-        sections.append((SECTION_RAW, encode_raw_payloads(raw_payloads)))
+        raw_section_payload = encode_raw_payloads(raw_payloads)
+        sections.append((SECTION_RAW, raw_section_payload))
 
     header = struct.pack(">4sHH", MAGIC, VERSION, len(sections) + 1)
     payload_without_integrity = bytearray(header)
@@ -183,7 +190,13 @@ def serialize_seed(
         "manifest_crc32": zlib.crc32(manifest_payload) & 0xFFFFFFFF,
         "recipe_crc32": zlib.crc32(recipe_payload) & 0xFFFFFFFF,
         "payload_crc32": zlib.crc32(payload_without_integrity) & 0xFFFFFFFF,
+        "manifest_sha256": _sha256_hex(manifest_payload),
+        "recipe_sha256": _sha256_hex(recipe_payload),
+        "payload_sha256": _sha256_hex(payload_without_integrity),
     }
+    if raw_section_payload is not None:
+        integrity["raw_crc32"] = zlib.crc32(raw_section_payload) & 0xFFFFFFFF
+        integrity["raw_sha256"] = _sha256_hex(raw_section_payload)
     integrity_payload = json.dumps(integrity, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
     return bytes(payload_without_integrity + _pack_section(SECTION_INTEGRITY, integrity_payload))
@@ -244,6 +257,9 @@ def parse_seed(data: bytes) -> Seed:
     expected_manifest_crc = zlib.crc32(manifest_payload) & 0xFFFFFFFF
     expected_recipe_crc = zlib.crc32(recipe_payload) & 0xFFFFFFFF
     expected_payload_crc = zlib.crc32(data[:integrity_section_start]) & 0xFFFFFFFF
+    expected_manifest_sha256 = _sha256_hex(manifest_payload)
+    expected_recipe_sha256 = _sha256_hex(recipe_payload)
+    expected_payload_sha256 = _sha256_hex(data[:integrity_section_start])
 
     if integrity.get("manifest_crc32") != expected_manifest_crc:
         raise SeedFormatError("Manifest CRC32 mismatch; seed may be corrupted or tampered.")
@@ -251,6 +267,28 @@ def parse_seed(data: bytes) -> Seed:
         raise SeedFormatError("Recipe CRC32 mismatch; seed may be corrupted or tampered.")
     if integrity.get("payload_crc32") != expected_payload_crc:
         raise SeedFormatError("Seed payload CRC32 mismatch; seed may be corrupted or tampered.")
+    if (
+        "manifest_sha256" in integrity
+        and integrity.get("manifest_sha256") != expected_manifest_sha256
+    ):
+        raise SeedFormatError("Manifest SHA-256 mismatch; seed may be corrupted or tampered.")
+    if (
+        "recipe_sha256" in integrity
+        and integrity.get("recipe_sha256") != expected_recipe_sha256
+    ):
+        raise SeedFormatError("Recipe SHA-256 mismatch; seed may be corrupted or tampered.")
+    if (
+        "payload_sha256" in integrity
+        and integrity.get("payload_sha256") != expected_payload_sha256
+    ):
+        raise SeedFormatError("Seed payload SHA-256 mismatch; seed may be corrupted or tampered.")
+    if raw_payload is not None:
+        expected_raw_crc = zlib.crc32(raw_payload) & 0xFFFFFFFF
+        expected_raw_sha256 = _sha256_hex(raw_payload)
+        if "raw_crc32" in integrity and integrity.get("raw_crc32") != expected_raw_crc:
+            raise SeedFormatError("RAW CRC32 mismatch; seed may be corrupted or tampered.")
+        if "raw_sha256" in integrity and integrity.get("raw_sha256") != expected_raw_sha256:
+            raise SeedFormatError("RAW SHA-256 mismatch; seed may be corrupted or tampered.")
 
     if not manifest_payload:
         raise SeedFormatError("Manifest section empty.")
