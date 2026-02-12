@@ -57,6 +57,8 @@ Migration policy:
 - Error output is standardized with stable `HELIX_E_*` codes and next-action hints.
 - Compatibility governance uses committed fixture seeds and regression tests as
   release gates; format evolution must preserve read compatibility or bump version.
+- Performance governance adds benchmark gates for CDC reuse gain, seed-size ratio,
+  and encode throughput (`scripts/bench_gate.py`).
 
 ## Assumptions
 - `ipfs` CLI installed/configured when publish/fetch is used.

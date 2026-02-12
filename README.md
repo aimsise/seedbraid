@@ -171,14 +171,21 @@ Regenerate intentionally with:
 Run:
 ```bash
 uv run --no-editable python scripts/bench_shifted_dedup.py
+uv run --no-editable python scripts/bench_gate.py \
+  --min-reuse-improvement-bps 1 \
+  --max-seed-size-ratio 1.20 \
+  --min-cdc-throughput-mib-s 0.10 \
+  --json-out .artifacts/bench-report.json
 ```
 
 Expected behavior:
 - `cdc_buzhash` should show better reuse than `fixed` when a single-byte insertion shifts offsets.
+- `bench_gate.py` exits non-zero when configured thresholds are violated.
 
 ## Project Documents
 - Format spec: `docs/FORMAT.md`
 - Design rationale: `docs/DESIGN.md`
 - Threat model: `docs/THREAT_MODEL.md`
 - Error codes: `docs/ERROR_CODES.md`
+- Performance gates: `docs/PERFORMANCE.md`
 - Plan: `PLANS.md`
