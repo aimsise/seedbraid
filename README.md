@@ -188,4 +188,5 @@ Expected behavior:
 - Threat model: `docs/THREAT_MODEL.md`
 - Error codes: `docs/ERROR_CODES.md`
 - Performance gates: `docs/PERFORMANCE.md`
+- Product packaging/pricing draft: `docs/PRODUCT_PACKAGING_PRICING.md`
 - Plan: `PLANS.md`

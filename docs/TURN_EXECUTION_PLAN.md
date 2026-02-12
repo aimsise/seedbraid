@@ -53,9 +53,10 @@ Completed turns:
 - [x] Turn 8: `feat(ops): add doctor command and actionable error codes`
 - [x] Turn 9: `test(format): add compatibility fixture regression coverage`
 - [x] Turn 10: `perf(ci): add benchmark gates for dedup and throughput`
+- [x] Turn 11: `docs(product): define packaging and pricing draft`
 
 Pending turns:
-- [ ] Turn 11
+- none
 
 ## Definition of Done (Per Turn)
 A turn is complete only when all are true:
