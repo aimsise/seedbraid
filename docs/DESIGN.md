@@ -53,6 +53,8 @@ Migration policy:
 - `helix publish` warns on unencrypted seed publication to reduce accidental public leakage.
 - IPFS fetch path includes retry/backoff and optional HTTP gateway fallback for resilience.
 - `helix pin-health` provides operator-visible local pin and block availability checks.
+- `helix doctor` provides preflight diagnostics for IPFS, genome path, and compression support.
+- Error output is standardized with stable `HELIX_E_*` codes and next-action hints.
 
 ## Assumptions
 - `ipfs` CLI installed/configured when publish/fetch is used.

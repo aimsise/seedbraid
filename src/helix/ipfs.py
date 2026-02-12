@@ -16,7 +16,9 @@ def _require_ipfs() -> str:
     if ipfs is None:
         raise ExternalToolError(
             "ipfs CLI not found. Install IPFS and ensure `ipfs` is on PATH. "
-            "Check with: `ipfs --version`."
+            "Check with: `ipfs --version`.",
+            code="HELIX_E_IPFS_NOT_FOUND",
+            next_action="Install Kubo and verify with `ipfs --version`.",
         )
     return ipfs
 
@@ -25,7 +27,11 @@ def publish_seed(seed_path: str | Path, pin: bool = False) -> str:
     ipfs = _require_ipfs()
     seed_path = Path(seed_path)
     if not seed_path.exists():
-        raise ExternalToolError(f"Seed file not found: {seed_path}")
+        raise ExternalToolError(
+            f"Seed file not found: {seed_path}",
+            code="HELIX_E_SEED_NOT_FOUND",
+            next_action="Provide an existing seed file path to `helix publish`.",
+        )
 
     proc = subprocess.run(
         [ipfs, "add", "-Q", str(seed_path)],
@@ -35,11 +41,19 @@ def publish_seed(seed_path: str | Path, pin: bool = False) -> str:
     )
     if proc.returncode != 0:
         msg = proc.stderr.strip() or proc.stdout.strip() or "ipfs add failed"
-        raise ExternalToolError(f"Failed to publish seed to IPFS: {msg}")
+        raise ExternalToolError(
+            f"Failed to publish seed to IPFS: {msg}",
+            code="HELIX_E_IPFS_PUBLISH",
+            next_action="Ensure IPFS daemon is running and retry publish.",
+        )
 
     cid = proc.stdout.strip()
     if not cid:
-        raise ExternalToolError("IPFS publish did not return CID.")
+        raise ExternalToolError(
+            "IPFS publish did not return CID.",
+            code="HELIX_E_IPFS_PUBLISH",
+            next_action="Retry `helix publish` and inspect ipfs daemon logs.",
+        )
 
     if pin:
         pin_proc = subprocess.run(
@@ -50,7 +64,11 @@ def publish_seed(seed_path: str | Path, pin: bool = False) -> str:
         )
         if pin_proc.returncode != 0:
             msg = pin_proc.stderr.strip() or pin_proc.stdout.strip() or "ipfs pin add failed"
-            raise ExternalToolError(f"Published CID {cid}, but pin failed: {msg}")
+            raise ExternalToolError(
+                f"Published CID {cid}, but pin failed: {msg}",
+                code="HELIX_E_IPFS_PUBLISH",
+                next_action="Run `ipfs pin add <cid>` manually and verify node health.",
+            )
 
     return cid
 
@@ -67,7 +85,9 @@ def _validate_fetched_seed_blob(cid: str, out_path: Path, blob: bytes) -> None:
         read_seed(out_path)
     except SeedFormatError as exc:
         raise ExternalToolError(
-            f"Fetched bytes for CID {cid}, but integrity/manifest validation failed: {exc}"
+            f"Fetched bytes for CID {cid}, but integrity/manifest validation failed: {exc}",
+            code="HELIX_E_SEED_FORMAT",
+            next_action="Refetch the CID or verify publisher integrity before decode.",
         ) from exc
 
 
@@ -77,7 +97,11 @@ def _fetch_from_gateway(cid: str, gateway: str) -> bytes:
         with urllib.request.urlopen(url, timeout=30) as response:
             return response.read()
     except (urllib.error.URLError, OSError) as exc:
-        raise ExternalToolError(f"Gateway fetch failed ({url}): {exc}") from exc
+        raise ExternalToolError(
+            f"Gateway fetch failed ({url}): {exc}",
+            code="HELIX_E_IPFS_FETCH",
+            next_action="Try another gateway or confirm network access from this environment.",
+        ) from exc
 
 
 def fetch_seed(
@@ -91,9 +115,17 @@ def fetch_seed(
     ipfs = _require_ipfs()
     out_path = Path(out_path)
     if retries < 1:
-        raise ExternalToolError("Fetch retries must be >= 1.")
+        raise ExternalToolError(
+            "Fetch retries must be >= 1.",
+            code="HELIX_E_INVALID_OPTION",
+            next_action="Use `--retries` with value >= 1.",
+        )
     if backoff_ms < 0:
-        raise ExternalToolError("Fetch backoff must be >= 0ms.")
+        raise ExternalToolError(
+            "Fetch backoff must be >= 0ms.",
+            code="HELIX_E_INVALID_OPTION",
+            next_action="Use `--backoff-ms` with value >= 0.",
+        )
 
     last_err = "ipfs cat failed"
     for attempt in range(1, retries + 1):
@@ -128,7 +160,14 @@ def fetch_seed(
         " Next action: verify local IPFS daemon connectivity, confirm CID availability, "
         "or provide --gateway https://<gateway>/ipfs."
     )
-    raise ExternalToolError(detail)
+    raise ExternalToolError(
+        detail,
+        code="HELIX_E_IPFS_FETCH",
+        next_action=(
+            "Use `helix fetch <cid> --gateway https://ipfs.io/ipfs` "
+            "or check IPFS node health."
+        ),
+    )
 
 
 def pin_health_status(cid: str) -> dict[str, str | bool | None]:
@@ -157,7 +196,11 @@ def pin_health_status(cid: str) -> dict[str, str | bool | None]:
             pin_type = None
             pin_reason = pin_msg
         else:
-            raise ExternalToolError(f"Failed to query pin status for CID {cid}: {pin_msg}")
+            raise ExternalToolError(
+                f"Failed to query pin status for CID {cid}: {pin_msg}",
+                code="HELIX_E_IPFS_PIN_STATUS",
+                next_action="Verify IPFS daemon is running and retry `helix pin-health <cid>`.",
+            )
 
     block_proc = subprocess.run(
         [ipfs, "block", "stat", cid],

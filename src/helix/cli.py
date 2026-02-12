@@ -17,6 +17,7 @@ from .codec import (
     verify_seed,
 )
 from .container import is_encrypted_seed_data, sign_seed_file
+from .diagnostics import run_doctor
 from .errors import ExternalToolError, HelixError
 from .ipfs import fetch_seed, pin_health_status, publish_seed
 
@@ -68,7 +69,9 @@ def encode(
             code=_print_error(
                 HelixError(
                     "Encryption key is required when --encrypt is enabled. "
-                    "Use --encryption-key or HELIX_ENCRYPTION_KEY."
+                    "Use --encryption-key or HELIX_ENCRYPTION_KEY.",
+                    code="HELIX_E_ENCRYPTION_KEY_MISSING",
+                    next_action="Pass `--encryption-key <secret>` or set HELIX_ENCRYPTION_KEY.",
                 )
             )
         )
@@ -78,7 +81,9 @@ def encode(
             code=_print_error(
                 HelixError(
                     "HELIX_ENCRYPTION_KEY is not set. "
-                    "Provide --encryption-key or set HELIX_ENCRYPTION_KEY."
+                    "Provide --encryption-key or set HELIX_ENCRYPTION_KEY.",
+                    code="HELIX_E_ENCRYPTION_KEY_MISSING",
+                    next_action="Export HELIX_ENCRYPTION_KEY or pass `--encryption-key` directly.",
                 )
             )
         )
@@ -286,6 +291,27 @@ def pin_health(cid: str) -> None:
 
 
 @app.command()
+def doctor(
+    genome: Path = typer.Option(Path("./genome"), "--genome"),
+) -> None:
+    """Run environment and dependency diagnostics."""
+    try:
+        report = run_doctor(genome)
+    except (HelixError, ExternalToolError) as exc:
+        raise typer.Exit(code=_print_error(exc))
+
+    for check in report.checks:
+        typer.echo(f"[{check.status}] {check.check}: {check.detail}")
+        if check.next_action and check.status in {"warn", "fail"}:
+            typer.echo(f"next_action: {check.next_action}")
+
+    typer.echo(
+        f"doctor summary ok={report.ok_count} warn={report.warn_count} fail={report.fail_count}"
+    )
+    raise typer.Exit(code=0 if report.ok else 1)
+
+
+@app.command()
 def sign(
     seed: Path,
     out: Path = typer.Option(..., "--out"),
@@ -303,7 +329,9 @@ def sign(
             code=_print_error(
                 HelixError(
                     f"Signing key env var is not set: {key_env}. "
-                    "Set it before running `helix sign`."
+                    "Set it before running `helix sign`.",
+                    code="HELIX_E_SIGNING_KEY_MISSING",
+                    next_action=f"Export `{key_env}` with your HMAC signing key and retry.",
                 )
             )
         )
@@ -378,5 +406,11 @@ def genome_restore(
 
 
 def _print_error(exc: Exception) -> int:
-    typer.echo(f"error: {exc}", err=True)
+    if isinstance(exc, HelixError):
+        info = exc.as_info()
+        typer.echo(f"error[{info.code}]: {info.message}", err=True)
+        if info.next_action:
+            typer.echo(f"next_action: {info.next_action}", err=True)
+        return 1
+    typer.echo(f"error[HELIX_E_UNKNOWN]: {exc}", err=True)
     return 1
