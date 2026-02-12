@@ -68,6 +68,7 @@ def encode_file(
     learn: bool,
     portable: bool,
     manifest_compression: str,
+    encryption_key: str | None = None,
 ) -> EncodeStats:
     in_path = Path(in_path)
     genome = open_genome(genome_path)
@@ -146,7 +147,14 @@ def encode_file(
             "created_at": dt.datetime.now(dt.UTC).isoformat(),
         }
         recipe = Recipe(hash_table=hash_table, ops=ops)
-        write_seed(out_seed_path, manifest, recipe, raw_payloads, manifest_compression)
+        write_seed(
+            out_seed_path,
+            manifest,
+            recipe,
+            raw_payloads,
+            manifest_compression,
+            encryption_key=encryption_key,
+        )
         return stats
     finally:
         genome.close()
@@ -180,8 +188,14 @@ def _resolve_chunk(
     raise DecodeError(f"Missing RAW payload and genome chunk: {digest.hex()}")
 
 
-def decode_file(seed_path: str | Path, genome_path: str | Path, out_path: str | Path) -> str:
-    seed = read_seed(seed_path)
+def decode_file(
+    seed_path: str | Path,
+    genome_path: str | Path,
+    out_path: str | Path,
+    *,
+    encryption_key: str | None = None,
+) -> str:
+    seed = read_seed(seed_path, encryption_key=encryption_key)
     genome = open_genome(genome_path)
     out_path = Path(out_path)
     h = hashlib.sha256()
@@ -211,8 +225,9 @@ def verify_seed(
     strict: bool = False,
     require_signature: bool = False,
     signature_key: str | None = None,
+    encryption_key: str | None = None,
 ) -> VerifyReport:
-    seed = read_seed(seed_path)
+    seed = read_seed(seed_path, encryption_key=encryption_key)
     genome = open_genome(genome_path)
     missing: list[str] = []
     expected = seed.manifest.get("source_sha256")

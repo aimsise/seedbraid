@@ -48,6 +48,7 @@ Migration policy:
 - Portable seeds can be larger because unknown chunks are embedded.
 - Integrity uses CRC32 + SHA-256 digests.
 - Optional seed signatures use HMAC-SHA256 in this iteration (`helix sign` and `verify --require-signature`).
+- Optional encryption uses HLE1 wrapper around HLX1 payload for backward-compatible rollout.
 
 ## Assumptions
 - `ipfs` CLI installed/configured when publish/fetch is used.

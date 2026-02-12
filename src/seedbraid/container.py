@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import struct
 import zlib
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from .errors import SeedFormatError
 
 MAGIC = b"HLX1"
 VERSION = 1
+ENC_MAGIC = b"HLE1"
+ENC_VERSION = 1
 
 SECTION_MANIFEST = 1
 SECTION_RECIPE = 2
@@ -166,6 +169,40 @@ def _hmac_sha256_hex(data: bytes, key: str) -> str:
     return hmac.new(key.encode("utf-8"), data, hashlib.sha256).hexdigest()
 
 
+def _derive_encryption_keys(passphrase: str, salt: bytes) -> tuple[bytes, bytes]:
+    base_key = hashlib.scrypt(
+        passphrase.encode("utf-8"),
+        salt=salt,
+        n=16384,
+        r=8,
+        p=1,
+        dklen=32,
+    )
+    enc_key = hashlib.sha256(base_key + b"enc").digest()
+    mac_key = hashlib.sha256(base_key + b"mac").digest()
+    return enc_key, mac_key
+
+
+def _keystream(enc_key: bytes, nonce: bytes, length: int) -> bytes:
+    blocks: list[bytes] = []
+    produced = 0
+    counter = 0
+    while produced < length:
+        block = hashlib.sha256(enc_key + nonce + counter.to_bytes(8, "big")).digest()
+        blocks.append(block)
+        produced += len(block)
+        counter += 1
+    return b"".join(blocks)[:length]
+
+
+def _xor_bytes(a: bytes, b: bytes) -> bytes:
+    return bytes(x ^ y for x, y in zip(a, b, strict=False))
+
+
+def is_encrypted_seed_data(data: bytes) -> bool:
+    return len(data) >= 4 and data[:4] == ENC_MAGIC
+
+
 def _build_signature_payload(signed_payload: bytes, signature_key: str, key_id: str) -> bytes:
     signature = {
         "algorithm": "hmac-sha256",
@@ -174,6 +211,50 @@ def _build_signature_payload(signed_payload: bytes, signature_key: str, key_id: 
         "signature": _hmac_sha256_hex(signed_payload, signature_key),
     }
     return json.dumps(signature, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def encrypt_seed_bytes(seed_bytes: bytes, passphrase: str) -> bytes:
+    salt = os.urandom(16)
+    nonce = os.urandom(16)
+    enc_key, mac_key = _derive_encryption_keys(passphrase, salt)
+    ciphertext = _xor_bytes(seed_bytes, _keystream(enc_key, nonce, len(seed_bytes)))
+
+    header = struct.pack(">4sHBBQ", ENC_MAGIC, ENC_VERSION, len(salt), len(nonce), len(ciphertext))
+    payload = header + salt + nonce + ciphertext
+    mac = hmac.new(mac_key, payload, hashlib.sha256).digest()
+    return payload + mac
+
+
+def decrypt_seed_bytes(blob: bytes, passphrase: str) -> bytes:
+    if len(blob) < 4 + 2 + 1 + 1 + 8 + 32:
+        raise SeedFormatError("Encrypted seed is too short.")
+    magic, version, salt_len, nonce_len, ciphertext_len = struct.unpack_from(">4sHBBQ", blob, 0)
+    if magic != ENC_MAGIC:
+        raise SeedFormatError("Encrypted seed magic mismatch. Expected HLE1.")
+    if version != ENC_VERSION:
+        raise SeedFormatError(f"Unsupported encrypted seed version: {version}")
+
+    header_len = 16
+    payload_len = header_len + salt_len + nonce_len + ciphertext_len
+    if len(blob) != payload_len + 32:
+        raise SeedFormatError("Encrypted seed length mismatch or truncation detected.")
+
+    salt_off = header_len
+    nonce_off = salt_off + salt_len
+    ciphertext_off = nonce_off + nonce_len
+    salt = blob[salt_off:nonce_off]
+    nonce = blob[nonce_off:ciphertext_off]
+    ciphertext = blob[ciphertext_off : ciphertext_off + ciphertext_len]
+    mac = blob[-32:]
+
+    _, mac_key = _derive_encryption_keys(passphrase, salt)
+    payload = blob[:-32]
+    expected_mac = hmac.new(mac_key, payload, hashlib.sha256).digest()
+    if not hmac.compare_digest(mac, expected_mac):
+        raise SeedFormatError("Encrypted seed authentication failed (wrong key or tampering).")
+
+    enc_key, _ = _derive_encryption_keys(passphrase, salt)
+    return _xor_bytes(ciphertext, _keystream(enc_key, nonce, len(ciphertext)))
 
 
 def serialize_seed(
@@ -367,8 +448,16 @@ def parse_seed(data: bytes) -> Seed:
     )
 
 
-def read_seed(path: str | Path) -> Seed:
-    return parse_seed(Path(path).read_bytes())
+def read_seed(path: str | Path, *, encryption_key: str | None = None) -> Seed:
+    blob = Path(path).read_bytes()
+    if is_encrypted_seed_data(blob):
+        if encryption_key is None:
+            raise SeedFormatError(
+                "Encrypted seed requires decryption key. "
+                "Provide --encryption-key or set HELIX_ENCRYPTION_KEY."
+            )
+        blob = decrypt_seed_bytes(blob, encryption_key)
+    return parse_seed(blob)
 
 
 def write_seed(
@@ -379,6 +468,7 @@ def write_seed(
     manifest_compression: str,
     signature_key: str | None = None,
     signature_key_id: str = "default",
+    encryption_key: str | None = None,
 ) -> None:
     data = serialize_seed(
         manifest=manifest,
@@ -388,6 +478,8 @@ def write_seed(
         signature_key=signature_key,
         signature_key_id=signature_key_id,
     )
+    if encryption_key is not None:
+        data = encrypt_seed_bytes(data, encryption_key)
     Path(path).write_bytes(data)
 
 
