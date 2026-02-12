@@ -105,6 +105,18 @@ uv run --no-editable helix fetch <cid> --out fetched.hlx --gateway https://ipfs.
 uv run --no-editable helix pin-health <cid>
 ```
 
+### Doctor
+```bash
+uv run --no-editable helix doctor --genome ./genome
+```
+
+`doctor` checks:
+- Python runtime compatibility (>=3.12)
+- IPFS CLI availability/version
+- `IPFS_PATH` state
+- genome path writability
+- compression support (`zlib`, optional `zstd`)
+
 ### Sign Seed (optional)
 ```bash
 export HELIX_SIGNING_KEY='your-shared-secret'
@@ -133,6 +145,15 @@ If missing, install Kubo (IPFS CLI) and ensure `ipfs` is on your PATH.
 - `zstd` compression error:
   - Install optional dependency `zstandard`, or use `--compression zlib`.
 
+## Troubleshooting Matrix
+| Symptom | Error Code | Next Action |
+|---|---|---|
+| Encryption requested but key missing | `HELIX_E_ENCRYPTION_KEY_MISSING` | Pass `--encryption-key` or set `HELIX_ENCRYPTION_KEY`. |
+| Signing requested but key missing | `HELIX_E_SIGNING_KEY_MISSING` | Export signing key env var and retry `helix sign`. |
+| IPFS CLI missing | `HELIX_E_IPFS_NOT_FOUND` | Install Kubo and confirm `ipfs --version`. |
+| IPFS fetch/publish failure | `HELIX_E_IPFS_FETCH` / `HELIX_E_IPFS_PUBLISH` | Check daemon/network, retry, use gateway fallback if needed. |
+| Seed parse/integrity failure | `HELIX_E_SEED_FORMAT` | Re-fetch/rebuild seed and verify source integrity. |
+
 ## Tests and CI-Equivalent Local Commands
 ```bash
 uv run --no-editable ruff check .
@@ -154,4 +175,5 @@ Expected behavior:
 - Format spec: `docs/FORMAT.md`
 - Design rationale: `docs/DESIGN.md`
 - Threat model: `docs/THREAT_MODEL.md`
+- Error codes: `docs/ERROR_CODES.md`
 - Plan: `PLANS.md`
