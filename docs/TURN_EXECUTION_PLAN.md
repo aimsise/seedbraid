@@ -52,9 +52,9 @@ Completed turns:
 - [x] Turn 7: `feat(ipfs): add retry logic and pin health checks`
 - [x] Turn 8: `feat(ops): add doctor command and actionable error codes`
 - [x] Turn 9: `test(format): add compatibility fixture regression coverage`
+- [x] Turn 10: `perf(ci): add benchmark gates for dedup and throughput`
 
 Pending turns:
-- [ ] Turn 10
 - [ ] Turn 11
 
 ## Definition of Done (Per Turn)

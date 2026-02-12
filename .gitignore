@@ -39,6 +39,7 @@ pip-wheel-metadata/
 **/genome.sqlite
 **/genome.db
 demo/
+.artifacts/
 
 # IPFS local repos and temp outputs
 .ipfs/
