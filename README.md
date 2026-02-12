@@ -42,11 +42,17 @@ uv lock
 uv run --no-editable helix encode input.bin --genome ./genome --out seed.hlx \
   --chunker cdc_buzhash --avg 65536 --min 16384 --max 262144 \
   --learn --no-portable --compression zlib
+
+export HELIX_ENCRYPTION_KEY='your-secret-passphrase'
+uv run --no-editable helix encode input.bin --genome ./genome --out seed.encrypted.hlx \
+  --encrypt
 ```
 
 ### Decode
 ```bash
 uv run --no-editable helix decode seed.hlx --genome ./genome --out recovered.bin
+uv run --no-editable helix decode seed.encrypted.hlx --genome ./genome --out recovered.bin \
+  --encryption-key "$HELIX_ENCRYPTION_KEY"
 ```
 
 ### Verify
@@ -54,6 +60,8 @@ uv run --no-editable helix decode seed.hlx --genome ./genome --out recovered.bin
 uv run --no-editable helix verify seed.hlx --genome ./genome
 uv run --no-editable helix verify seed.hlx --genome ./genome --strict
 uv run --no-editable helix verify seed.hlx --genome ./genome --require-signature --signature-key "$HELIX_SIGNING_KEY"
+uv run --no-editable helix verify seed.encrypted.hlx --genome ./genome --strict \
+  --encryption-key "$HELIX_ENCRYPTION_KEY"
 ```
 
 `verify` supports two modes:

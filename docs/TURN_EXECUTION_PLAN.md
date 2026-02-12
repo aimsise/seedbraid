@@ -47,9 +47,9 @@ Completed turns:
 - [x] Turn 2: `feat: add genome snapshot and restore commands` (`055aa46`)
 - [x] Turn 3: `feat: add section sha256 integrity checks to HLX1` (`444f13f`)
 - [x] Turn 4: `feat: add optional seed signature verification`
+- [x] Turn 5: `feat: add optional seed encryption flow`
 
 Pending turns:
-- [ ] Turn 5
 - [ ] Turn 6
 - [ ] Turn 7
 - [ ] Turn 8

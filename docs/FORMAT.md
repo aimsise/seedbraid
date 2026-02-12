@@ -104,6 +104,26 @@ Signed payload definition:
 - Backward-incompatible changes require `version` increment and docs update.
 - New optional sections may be added via TLV without changing version.
 
+## Encrypted Seed Wrapper (HLE1)
+For optional at-rest encryption, Helix wraps HLX1 bytes in `HLE1` format.
+
+Binary layout:
+- magic: 4 bytes, ASCII `HLE1`
+- version: uint16 (`1`)
+- salt_len: uint8 (`16`)
+- nonce_len: uint8 (`16`)
+- ciphertext_len: uint64
+- salt: `salt_len` bytes
+- nonce: `nonce_len` bytes
+- ciphertext: `ciphertext_len` bytes
+- mac: 32 bytes (`HMAC-SHA256`)
+
+Semantics:
+- Plain HLX1 payload is encrypted with a key derived from passphrase + salt.
+- MAC is validated before decryption output is accepted.
+- On MAC failure, parser must fail with explicit tamper/wrong-key error.
+- Existing unencrypted HLX1 files remain valid and unchanged.
+
 ## Genes Pack (Optional Utility Format)
 For `helix export-genes` / `helix import-genes`, Helix defines a small sidecar binary format:
 - magic: 5 bytes, ASCII `GENE1`

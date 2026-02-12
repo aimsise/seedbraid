@@ -27,6 +27,7 @@
 - Integrity section validates manifest, recipe, and full payload CRC32.
 - Verify/decode enforce expected output SHA-256.
 - Portable mode is opt-in and defaults off.
+- Optional encrypted wrapper (`HLE1`) protects seed confidentiality at rest/in transit when passphrase is provided.
 
 ## Limitations
 - CRC32 detects accidental corruption and simple tampering, not cryptographic forgery.

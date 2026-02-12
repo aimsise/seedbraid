@@ -50,8 +50,33 @@ def encode(
     learn: bool = typer.Option(True, "--learn/--no-learn"),
     portable: bool = typer.Option(False, "--portable/--no-portable"),
     compression: str = typer.Option("zlib", "--compression"),
+    encrypt: bool = typer.Option(False, "--encrypt/--no-encrypt"),
+    encryption_key: str | None = typer.Option(
+        None,
+        "--encryption-key",
+        help="Passphrase for HLE1 encrypted seed output.",
+    ),
 ) -> None:
     """Encode a file into HLX1 seed."""
+    if encrypt and not encryption_key:
+        raise typer.Exit(
+            code=_print_error(
+                HelixError(
+                    "Encryption key is required when --encrypt is enabled. "
+                    "Use --encryption-key or HELIX_ENCRYPTION_KEY."
+                )
+            )
+        )
+    effective_encryption_key = encryption_key or os.environ.get("HELIX_ENCRYPTION_KEY")
+    if encrypt and not effective_encryption_key:
+        raise typer.Exit(
+            code=_print_error(
+                HelixError(
+                    "HELIX_ENCRYPTION_KEY is not set. "
+                    "Provide --encryption-key or set HELIX_ENCRYPTION_KEY."
+                )
+            )
+        )
     try:
         stats = encode_file(
             in_path=file,
@@ -62,6 +87,7 @@ def encode(
             learn=learn,
             portable=portable,
             manifest_compression=compression,
+            encryption_key=effective_encryption_key if encrypt else None,
         )
         typer.echo(
             "encoded "
@@ -77,10 +103,20 @@ def decode(
     seed: Path,
     genome: Path = typer.Option(..., "--genome"),
     out: Path = typer.Option(..., "--out"),
+    encryption_key: str | None = typer.Option(
+        None,
+        "--encryption-key",
+        help="Passphrase for encrypted HLE1 seed input.",
+    ),
 ) -> None:
     """Decode a seed into original file."""
     try:
-        digest = decode_file(seed, genome, out)
+        digest = decode_file(
+            seed,
+            genome,
+            out,
+            encryption_key=encryption_key or os.environ.get("HELIX_ENCRYPTION_KEY"),
+        )
         typer.echo(f"decoded sha256={digest}")
     except HelixError as exc:
         raise typer.Exit(code=_print_error(exc))
@@ -105,6 +141,11 @@ def verify(
         "--signature-key",
         help="HMAC key used to validate seed signature.",
     ),
+    encryption_key: str | None = typer.Option(
+        None,
+        "--encryption-key",
+        help="Passphrase for encrypted HLE1 seed input.",
+    ),
 ) -> None:
     """Verify seed integrity and reconstructability."""
     try:
@@ -114,6 +155,7 @@ def verify(
             strict=strict,
             require_signature=require_signature,
             signature_key=signature_key,
+            encryption_key=encryption_key or os.environ.get("HELIX_ENCRYPTION_KEY"),
         )
     except HelixError as exc:
         raise typer.Exit(code=_print_error(exc))
