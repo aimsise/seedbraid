@@ -190,6 +190,7 @@ GitHub Actions workflows:
   - Runs strict integrity check via `helix verify --strict`
   - Publishes to IPFS only when `dry_run=false`
   - Installs Kubo (`ipfs` CLI) on runner when `dry_run=false` (version configurable via `kubo_version`)
+  - Verifies Kubo release tag signature status via GitHub API before install
   - Verifies downloaded Kubo archive checksum (`sha512`) before extraction
   - Supports `pin`, `portable`, `manifest_private`, and optional `encrypt`
     (`HELIX_ENCRYPTION_KEY` secret required when `encrypt=true`)

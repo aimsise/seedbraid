@@ -72,8 +72,9 @@ Migration policy:
   manual (`workflow_dispatch`), and performs `encode -> verify --strict ->
   publish` with `dry_run=true` as the safe default.
 - In real publish mode (`dry_run=false`), workflow installs Kubo (`ipfs` CLI)
-  on runner before publish and verifies archive checksum before extraction so
-  hosted runners can execute IPFS operations safely.
+  on runner before publish, verifies release tag signature state via GitHub API,
+  and verifies archive checksum before extraction so hosted runners can execute
+  IPFS operations safely.
 - CLI includes `helix gen-encryption-key` for operator-safe generation of
   `HELIX_ENCRYPTION_KEY` secrets from command line workflows.
 
