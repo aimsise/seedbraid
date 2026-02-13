@@ -155,6 +155,80 @@ jobs:
           name: generated-seed
           path: ${{ steps.prep.outputs.seed_path }}
           if-no-files-found: warn
+      - name: Verify Kubo release tag signature
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          python - "${{ inputs.kubo_version }}" <<'PY'
+          import json
+          import sys
+          import urllib.error
+          import urllib.request
+
+          version = sys.argv[1]
+          tag_ref = f"v{version}"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "User-Agent": "helix-ci-kubo-verifier",
+          }
+
+          def fetch(url: str) -> dict:
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      return json.load(resp)
+              except urllib.error.HTTPError as exc:
+                  print(f"::error::failed to fetch {url}: HTTP {exc.code}")
+                  raise SystemExit(1)
+              except urllib.error.URLError as exc:
+                  print(f"::error::failed to fetch {url}: {exc.reason}")
+                  raise SystemExit(1)
+
+          ref_url = f"https://api.github.com/repos/ipfs/kubo/git/ref/tags/{tag_ref}"
+          ref_obj = fetch(ref_url)
+          obj = ref_obj.get("object") or {}
+          if obj.get("type") != "tag":
+              print(
+                  "::error::kubo tag ref does not point to an annotated tag; "
+                  f"got type={obj.get('type')!r}"
+              )
+              print(
+                  "next_action: use a released kubo_version with a signed annotated tag."
+              )
+              raise SystemExit(1)
+
+          tag_sha = obj.get("sha")
+          if not isinstance(tag_sha, str) or not tag_sha:
+              print("::error::missing tag object sha in GitHub tag ref response.")
+              raise SystemExit(1)
+
+          tag_url = f"https://api.github.com/repos/ipfs/kubo/git/tags/{tag_sha}"
+          tag_obj = fetch(tag_url)
+          if tag_obj.get("tag") != tag_ref:
+              print("::error::kubo tag name mismatch in GitHub tag object.")
+              print(f"expected={tag_ref} actual={tag_obj.get('tag')}")
+              raise SystemExit(1)
+
+          verification = tag_obj.get("verification") or {}
+          verified = bool(verification.get("verified"))
+          reason = str(verification.get("reason") or "")
+          if not verified or reason != "valid":
+              print("::error::kubo tag signature is not valid according to GitHub API.")
+              print(f"verified={verified} reason={reason}")
+              print(
+                  "next_action: use a trusted kubo_version with valid signature "
+                  "verification status."
+              )
+              raise SystemExit(1)
+
+          tagger = tag_obj.get("tagger") or {}
+          print(
+              "kubo_tag_signature_verification="
+              f"PASS tag={tag_ref} "
+              f"tagger={tagger.get('name', 'unknown')} "
+              f"email={tagger.get('email', 'unknown')}"
+          )
+          PY
       - name: Install IPFS CLI (Kubo)
         if: ${{ !inputs.dry_run }}
         run: |

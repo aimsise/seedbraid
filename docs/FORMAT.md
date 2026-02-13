@@ -123,6 +123,8 @@ Signed payload definition:
 - Optional publish workflow (`.github/workflows/publish-seed.yml`) is manual and
   runs `helix encode` + strict `helix verify` before optional IPFS publish
   (`dry_run=true` by default) to prevent publishing unverified seeds.
+- In real publish mode, workflow verifies upstream Kubo release tag signature
+  (GitHub verification API) and archive checksum before installing `ipfs` CLI.
 - Any change that breaks fixture parsing/verification is considered breaking and
   must follow all of:
   1. bump container version,
