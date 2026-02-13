@@ -182,14 +182,15 @@ If missing, install Kubo (IPFS CLI) and ensure `ipfs` is on your PATH.
 GitHub Actions workflows:
 - `.github/workflows/ci.yml`
   - Lint: `ruff check .`
-  - Test: `pytest`
-  - Compatibility fixtures: `pytest tests/test_compat_fixtures.py`
+  - Test: `python -m pytest`
+  - Compatibility fixtures: `python -m pytest tests/test_compat_fixtures.py`
   - Benchmark gate: `python scripts/bench_gate.py ...`
 - `.github/workflows/publish-seed.yml` (manual only, `dry_run=true` default)
   - Generates seed from `source_path` via `helix encode`
   - Runs strict integrity check via `helix verify --strict`
   - Publishes to IPFS only when `dry_run=false`
   - Installs Kubo (`ipfs` CLI) on runner when `dry_run=false` (version configurable via `kubo_version`)
+  - Verifies downloaded Kubo archive checksum (`sha512`) before extraction
   - Supports `pin`, `portable`, `manifest_private`, and optional `encrypt`
     (`HELIX_ENCRYPTION_KEY` secret required when `encrypt=true`)
 
@@ -197,8 +198,8 @@ Local parity commands:
 ```bash
 uv sync --no-editable --extra dev
 uv run --no-sync --no-editable ruff check .
-PYTHONPATH=src uv run --no-sync --no-editable pytest
-PYTHONPATH=src uv run --no-sync --no-editable pytest tests/test_compat_fixtures.py
+PYTHONPATH=src uv run --no-sync --no-editable python -m pytest
+PYTHONPATH=src uv run --no-sync --no-editable python -m pytest tests/test_compat_fixtures.py
 uv run --no-sync --no-editable python scripts/bench_gate.py \
   --min-reuse-improvement-bps 1 \
   --max-seed-size-ratio 1.20 \
@@ -209,8 +210,8 @@ uv run --no-sync --no-editable python scripts/bench_gate.py \
 ## Tests and CI-Equivalent Local Commands
 ```bash
 uv run --no-editable ruff check .
-uv run --no-editable pytest
-uv run --no-editable pytest tests/test_compat_fixtures.py
+uv run --no-editable python -m pytest
+uv run --no-editable python -m pytest tests/test_compat_fixtures.py
 ```
 
 IPFS tests auto-skip when `ipfs` is not installed.

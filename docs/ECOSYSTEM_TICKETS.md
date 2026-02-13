@@ -55,7 +55,7 @@ Current baseline:
 - Run:
 ```bash
 UV_CACHE_DIR=.uv-cache uv run --no-sync --no-editable ruff check .
-PYTHONPATH=src UV_CACHE_DIR=.uv-cache uv run --no-sync --no-editable pytest
+PYTHONPATH=src UV_CACHE_DIR=.uv-cache uv run --no-sync --no-editable python -m pytest
 ```
 - Read before coding:
   - `README.md`
@@ -69,7 +69,7 @@ PYTHONPATH=src UV_CACHE_DIR=.uv-cache uv run --no-sync --no-editable pytest
 ## HLX-ECO-001 (P0) GitHub Actions Integration Pack
 - Goal: provide CI-ready workflows for lint/test/compat/perf and optional publish.
 - Scope:
-  - Add `.github/workflows/ci.yml` for `ruff`, `pytest`, compat tests.
+  - Add `.github/workflows/ci.yml` for `ruff`, `python -m pytest`, compat tests.
   - Add workflow job for `scripts/bench_gate.py`.
   - Add optional manual workflow for seed publish (dry-run by default).
 - Out of scope:

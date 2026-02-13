@@ -62,16 +62,18 @@ Migration policy:
 
 ## CI Integration Pack (HLX-ECO-001)
 - Primary workflow lives at `.github/workflows/ci.yml`.
-- CI jobs are separated into lint (`ruff check .`), full tests (`pytest`),
-  compatibility fixtures (`pytest tests/test_compat_fixtures.py`), and benchmark
-  gates (`scripts/bench_gate.py`).
+- CI jobs are separated into lint (`ruff check .`), full tests
+  (`python -m pytest`), compatibility fixtures
+  (`python -m pytest tests/test_compat_fixtures.py`), and benchmark gates
+  (`scripts/bench_gate.py`).
 - Benchmark gate is PR-blocking: non-zero exit from `bench_gate.py` fails the
   workflow and surfaces explicit gate violation lines in logs.
 - Optional publish workflow lives at `.github/workflows/publish-seed.yml`, is
   manual (`workflow_dispatch`), and performs `encode -> verify --strict ->
   publish` with `dry_run=true` as the safe default.
 - In real publish mode (`dry_run=false`), workflow installs Kubo (`ipfs` CLI)
-  on runner before publish so hosted runners can execute IPFS operations.
+  on runner before publish and verifies archive checksum before extraction so
+  hosted runners can execute IPFS operations safely.
 - CLI includes `helix gen-encryption-key` for operator-safe generation of
   `HELIX_ENCRYPTION_KEY` secrets from command line workflows.
 

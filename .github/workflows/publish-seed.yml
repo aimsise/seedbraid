@@ -162,10 +162,41 @@ jobs:
           kubo_version="${{ inputs.kubo_version }}"
           archive="kubo_v${kubo_version}_linux-amd64.tar.gz"
           url="https://dist.ipfs.tech/kubo/v${kubo_version}/${archive}"
+          checksum_url="${url}.sha512"
 
           if ! curl -fsSL "${url}" -o /tmp/kubo.tgz; then
             echo "::error::failed to download Kubo from ${url}"
             echo "next_action: set kubo_version to an available release and retry."
+            exit 1
+          fi
+          if ! curl -fsSL "${checksum_url}" -o /tmp/kubo.tgz.sha512; then
+            echo "::error::failed to download Kubo checksum from ${checksum_url}"
+            echo "next_action: check release assets for the selected kubo_version and retry."
+            exit 1
+          fi
+
+          expected_sha="$(awk 'NF {print $1; exit}' /tmp/kubo.tgz.sha512 | tr -d '\r')"
+          if [ -z "${expected_sha}" ]; then
+            echo "::error::checksum file is empty or malformed: ${checksum_url}"
+            echo "next_action: choose a valid kubo_version and retry."
+            exit 1
+          fi
+
+          if command -v sha512sum >/dev/null 2>&1; then
+            actual_sha="$(sha512sum /tmp/kubo.tgz | awk '{print $1}')"
+          elif command -v shasum >/dev/null 2>&1; then
+            actual_sha="$(shasum -a 512 /tmp/kubo.tgz | awk '{print $1}')"
+          else
+            echo "::error::no SHA-512 checksum tool available on runner."
+            echo "next_action: install coreutils/perl digest tools, then retry."
+            exit 1
+          fi
+
+          if [ "${actual_sha}" != "${expected_sha}" ]; then
+            echo "::error::Kubo checksum mismatch."
+            echo "expected=${expected_sha}"
+            echo "actual=${actual_sha}"
+            echo "next_action: stop release and investigate artifact integrity."
             exit 1
           fi
 
