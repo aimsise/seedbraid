@@ -28,13 +28,13 @@ git ls-files '*.env' '*.pem' '*.key' '*.p12' '*.sqlite' '*.db'
 ## 4. Quality Gates (Required)
 ```bash
 UV_CACHE_DIR=.uv-cache uv run --no-editable ruff check .
-PYTHONPATH=src UV_CACHE_DIR=.uv-cache uv run --no-editable pytest
+PYTHONPATH=src UV_CACHE_DIR=.uv-cache uv run --no-editable python -m pytest
 ```
 
 ## 5. Format and Compatibility (Required)
 - Compatibility fixtures are present and tests are green:
 ```bash
-uv run --no-editable pytest tests/test_compat_fixtures.py
+uv run --no-editable python -m pytest tests/test_compat_fixtures.py
 ```
 - If HLX behavior changed intentionally:
   - update `/Users/kytk/Documents/New project/docs/FORMAT.md`

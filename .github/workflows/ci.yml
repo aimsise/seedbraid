@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --no-editable --extra dev
       - name: Pytest
-        run: PYTHONPATH=src uv run --no-sync --no-editable pytest
+        run: PYTHONPATH=src uv run --no-sync --no-editable python -m pytest
 
   compat:
     runs-on: ubuntu-latest
@@ -59,7 +59,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --no-editable --extra dev
       - name: Compatibility fixtures
-        run: PYTHONPATH=src uv run --no-sync --no-editable pytest tests/test_compat_fixtures.py
+        run: PYTHONPATH=src uv run --no-sync --no-editable python -m pytest tests/test_compat_fixtures.py
 
   bench-gate:
     runs-on: ubuntu-latest
