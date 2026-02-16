@@ -39,7 +39,7 @@ Recommended `type` values:
 | 8 | R-05 / HLX-R05-1 | Operational diagnostics | `helix doctor`, error codes, troubleshooting docs | `feat(ops): add doctor command and actionable error codes` |
 | 9 | R-06 / HLX-R06-1 | Compatibility governance | fixture-based compatibility tests, policy docs | `test(format): add compatibility fixture regression coverage` |
 | 10 | R-07 / HLX-R07-1 | Performance regression guardrails | benchmark gate scripts and CI guidance | `perf(ci): add benchmark gates for dedup and throughput` |
-| 11 | R-08 / HLX-R08-1 | Packaging and pricing draft | OSS vs paid feature matrix and GTM notes | `docs(product): define packaging and pricing draft` |
+| 11 | R-08 / HLX-R08-1 | OSS sustainability guidance | Support/donation guidance and maintainer sustainability notes | `docs(oss): define support and donation guidance` |
 
 ## Progress Markers
 Completed turns:
@@ -53,7 +53,7 @@ Completed turns:
 - [x] Turn 8: `feat(ops): add doctor command and actionable error codes`
 - [x] Turn 9: `test(format): add compatibility fixture regression coverage`
 - [x] Turn 10: `perf(ci): add benchmark gates for dedup and throughput`
-- [x] Turn 11: `docs(product): define packaging and pricing draft`
+- [x] Turn 11: `docs(oss): define support and donation guidance`
 
 Pending turns:
 - none
