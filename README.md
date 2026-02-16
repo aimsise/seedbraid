@@ -286,9 +286,13 @@ Expected behavior:
 - DVC workflow bridge example: `examples/dvc/README.md`
 - OCI/ORAS distribution example: `examples/oci/README.md`
 - ML tooling hooks example: `examples/ml/README.md`
-- Product packaging/pricing draft: `docs/PRODUCT_PACKAGING_PRICING.md`
 - OSS release checklist: `docs/OSS_RELEASE_CHECKLIST.md`
 - Plan: `PLANS.md`
+
+## Support Helix
+- Helix is maintained as an open-source project.
+- If Helix helps your workflow, please consider donating via the repository `Sponsor` button.
+- Donations directly support maintenance, documentation, and compatibility/performance validation.
 
 ## Open Source Governance
 - License: `MIT` (`LICENSE`)

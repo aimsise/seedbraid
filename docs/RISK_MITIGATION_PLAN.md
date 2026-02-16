@@ -19,7 +19,7 @@ Priority is based on:
 Priority scale:
 - P0: immediate execution, blocks reliable production use.
 - P1: next wave, materially reduces operational incidents.
-- P2: strategic hardening and commercial readiness.
+- P2: strategic hardening and long-term OSS sustainability.
 
 ## Risk Register and Mitigation Summary
 | ID | Priority | Risk | Primary Control | Success KPI |
@@ -31,7 +31,7 @@ Priority scale:
 | R-05 | P1 | 運用環境差で失敗しやすい | helix doctor + actionable errors | 一次切り分け時間50%短縮 |
 | R-06 | P1 | 将来の互換性破壊 | compatibility policy + fixture tests | 旧seed回帰テスト常時緑 |
 | R-07 | P2 | 性能/コスト劣化 | benchmark gates + storage tuning | 閾値割れPRの自動検知 |
-| R-08 | P2 | 商用差別化不足 | packaging/pricing + managed features | 有料PoC成約率の可視化 |
+| R-08 | P2 | OSS維持体制の持続性不足 | support/donation guidance + maintainer workflow | 継続支援指標の可視化 |
 
 ## Detailed Mitigation Plans
 
@@ -151,21 +151,21 @@ Deliverables:
 Acceptance criteria:
 - PRs exceeding regression budget are blocked.
 
-### R-08 (P2) 商用化リスク
+### R-08 (P2) OSS持続性リスク
 Objective:
-- Define a monetizable product boundary without weakening OSS core.
+- Define a sustainable OSS support boundary without restricting OSS core.
 
 Implementation plan:
-1. Define free vs paid feature matrix.
-2. Specify managed add-ons: RBAC, audit logs, SLA, policy enforcement.
-3. Run structured discovery with pilot users.
+1. Define support channels and maintainer operation model for OSS users.
+2. Publish donation/sponsorship guidance and contribution expectations.
+3. Track adoption + support signals to prioritize maintenance work.
 
 Deliverables:
-- Packaging/pricing draft.
-- Pilot interview template and scoring rubric.
+- Support/donation guidance draft.
+- Maintainer support workflow and triage rubric.
 
 Acceptance criteria:
-- Approved packaging plan with measurable GTM hypotheses.
+- Approved support plan with measurable sustainability hypotheses.
 
 ## Execution Roadmap
 ### Phase A (Weeks 1-3)
@@ -178,7 +178,7 @@ Acceptance criteria:
 
 ### Phase C (Weeks 7-9)
 - Execute R-07, R-08.
-- Outcome target: scalable performance management and commercial readiness.
+- Outcome target: scalable performance management and OSS sustainability readiness.
 
 ## Suggested Engineering Tickets
 | Ticket | Risk | Type | Estimate | Definition of Done |
@@ -194,7 +194,7 @@ Acceptance criteria:
 | HLX-R05-1 | R-05 | diagnostics | M | doctor command with checks and codes |
 | HLX-R06-1 | R-06 | test | S | compatibility fixtures in CI |
 | HLX-R07-1 | R-07 | perf | M | benchmark thresholds enforced |
-| HLX-R08-1 | R-08 | product | M | feature/pricing matrix approved |
+| HLX-R08-1 | R-08 | docs | M | support/donation guidance approved |
 
 ## Governance and Review Cadence
 - Weekly risk review: status, blockers, KPI trend.
