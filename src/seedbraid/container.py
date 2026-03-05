@@ -252,13 +252,11 @@ def decrypt_seed_bytes(blob: bytes, passphrase: str) -> bytes:
     ciphertext = blob[ciphertext_off : ciphertext_off + ciphertext_len]
     mac = blob[-32:]
 
-    _, mac_key = _derive_encryption_keys(passphrase, salt)
+    enc_key, mac_key = _derive_encryption_keys(passphrase, salt)
     payload = blob[:-32]
     expected_mac = hmac.new(mac_key, payload, hashlib.sha256).digest()
     if not hmac.compare_digest(mac, expected_mac):
         raise SeedFormatError("Encrypted seed authentication failed (wrong key or tampering).")
-
-    enc_key, _ = _derive_encryption_keys(passphrase, salt)
     return _xor_bytes(ciphertext, _keystream(enc_key, nonce, len(ciphertext)))
 
 
