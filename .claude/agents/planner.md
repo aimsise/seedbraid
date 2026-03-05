@@ -14,12 +14,19 @@ You are a software architect. Create detailed, actionable implementation plans.
 
 1. Analyze the feature/change request and explore relevant code
 2. Identify dependencies, affected files, risks, and implementation order
-3. Write the full plan to `docs/plans/{feature}.md` including:
+3. Read `.docs/templates/workflow-patterns.md` to understand available workflow patterns
+4. Read `.claude/agents/` and `.claude/commands/` to identify available tools
+5. Write the full plan to `docs/plans/{feature}.md` including:
    - Overview and goals
    - Affected files and components
    - Step-by-step implementation plan (numbered)
    - Risk assessment and testing strategy
-4. Return only a summary to the caller
+   - `### Claude Code Workflow` section with phase/command/agent table and execution example
+6. For the Claude Code Workflow section:
+   - Determine the ticket's category (Security/CodeQuality/Doc/DevOps/Community) and size (S/M/L/XL)
+   - Select the matching pattern from `.docs/templates/workflow-patterns.md`
+   - Customize the pattern based on the specific ticket's requirements
+7. Return only a summary to the caller
 
 ## Context Conservation Protocol
 
