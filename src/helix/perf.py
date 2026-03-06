@@ -1,3 +1,8 @@
+"""Performance benchmarking for CDC vs fixed chunking deduplication.
+
+Measures reuse ratio improvement, seed size, and encode throughput
+to support CI gate checks.
+"""
 from __future__ import annotations
 
 import json

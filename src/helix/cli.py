@@ -1,3 +1,8 @@
+"""Typer-based CLI for all Helix operations.
+
+Exposes encode, decode, verify, prime, doctor, IPFS publish/fetch,
+and seed management commands.
+"""
 from __future__ import annotations
 
 import os

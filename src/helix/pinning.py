@@ -1,3 +1,8 @@
+"""Remote pinning provider abstraction using the Pinning Services API.
+
+Implements retry logic with exponential backoff for reliable remote
+pin registration.
+"""
 from __future__ import annotations
 
 import json

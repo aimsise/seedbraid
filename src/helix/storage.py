@@ -1,3 +1,8 @@
+"""SQLite-backed genome chunk storage with content-addressed dedup.
+
+Provides the ``GenomeStorage`` protocol and its ``SQLiteGenome``
+implementation for portable, single-file chunk persistence.
+"""
 from __future__ import annotations
 
 import sqlite3

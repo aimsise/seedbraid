@@ -1,3 +1,10 @@
+"""HLX1 binary seed container.
+
+Handles serialization, parsing, encryption, and signature for the
+TLV section format defined in FORMAT.md, including manifest
+compression, recipe encoding, raw payloads, integrity checks, and
+the HLE1 encrypted envelope.
+"""
 from __future__ import annotations
 
 import hashlib
