@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from helix.chunking import ChunkerConfig
 from helix.codec import (
     decode_file,
@@ -10,6 +12,7 @@ from helix.codec import (
     snapshot_genome,
     verify_seed,
 )
+from helix.errors import ACTION_VERIFY_SNAPSHOT, HelixError
 from helix.storage import open_genome
 
 
@@ -95,3 +98,19 @@ def test_genome_restore_replace_overwrites_existing_content(
 
     with open_genome(genome_b) as restored:
         assert restored.count_chunks() == expected_count
+
+
+def test_restore_bad_magic_has_next_action(
+    tmp_path: Path,
+) -> None:
+    bad_snap = tmp_path / "bad.hgs"
+    bad_snap.write_bytes(b"XXXX" + b"\x00" * 10)
+    with pytest.raises(HelixError) as exc_info:
+        restore_genome(
+            bad_snap, tmp_path / "genome",
+            replace=False,
+        )
+    assert (
+        exc_info.value.next_action
+        == ACTION_VERIFY_SNAPSHOT
+    )

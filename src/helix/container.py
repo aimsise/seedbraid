@@ -9,7 +9,18 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .errors import SeedFormatError
+from .errors import (
+    ACTION_CHECK_OPTIONS,
+    ACTION_INSTALL_ZSTD,
+    ACTION_PROVIDE_ENCRYPTION_KEY,
+    ACTION_REFETCH_SEED,
+    ACTION_REGENERATE_SEED,
+    ACTION_REPORT_BUG,
+    ACTION_UPGRADE_HELIX,
+    ACTION_VERIFY_ENCRYPTION,
+    ACTION_VERIFY_SEED,
+    SeedFormatError,
+)
 
 MAGIC = b"HLX1"
 VERSION = 1
@@ -71,10 +82,15 @@ def _compress(data: bytes, name: str) -> bytes:
             import zstandard as zstd
         except ImportError as exc:
             raise SeedFormatError(
-                "Compression 'zstd' requires optional dependency 'zstandard'."
+                "Compression 'zstd' requires optional"
+                " dependency 'zstandard'.",
+                next_action=ACTION_INSTALL_ZSTD,
             ) from exc
         return zstd.ZstdCompressor(level=3).compress(data)
-    raise SeedFormatError(f"Unsupported compression: {name}")
+    raise SeedFormatError(
+        f"Unsupported compression: {name}",
+        next_action=ACTION_REGENERATE_SEED,
+    )
 
 
 def _decompress(data: bytes, ctype: int) -> bytes:
@@ -87,10 +103,15 @@ def _decompress(data: bytes, ctype: int) -> bytes:
             import zstandard as zstd
         except ImportError as exc:
             raise SeedFormatError(
-                "Seed uses zstd compression but 'zstandard' is not installed."
+                "Seed uses zstd compression but"
+                " 'zstandard' is not installed.",
+                next_action=ACTION_INSTALL_ZSTD,
             ) from exc
         return zstd.ZstdDecompressor().decompress(data)
-    raise SeedFormatError(f"Unknown manifest compression id: {ctype}")
+    raise SeedFormatError(
+        f"Unknown manifest compression id: {ctype}",
+        next_action=ACTION_REGENERATE_SEED,
+    )
 
 
 def encode_recipe(recipe: Recipe) -> bytes:
@@ -100,7 +121,8 @@ def encode_recipe(recipe: Recipe) -> bytes:
         if len(digest) != 32:
             raise SeedFormatError(
                 "Recipe hash table must contain"
-                " 32-byte SHA-256 digests."
+                " 32-byte SHA-256 digests.",
+                next_action=ACTION_REPORT_BUG,
             )
         out.extend(digest)
     for op in recipe.ops:
@@ -110,30 +132,48 @@ def encode_recipe(recipe: Recipe) -> bytes:
 
 def decode_recipe(data: bytes) -> Recipe:
     if len(data) < 8:
-        raise SeedFormatError("Recipe section too short.")
+        raise SeedFormatError(
+            "Recipe section too short.",
+            next_action=ACTION_VERIFY_SEED,
+        )
     op_count, hash_count = struct.unpack_from(">II", data, 0)
     offset = 8
     hash_table: list[bytes] = []
     for _ in range(hash_count):
         if offset + 32 > len(data):
-            raise SeedFormatError("Recipe hash table truncated.")
+            raise SeedFormatError(
+                "Recipe hash table truncated.",
+                next_action=ACTION_VERIFY_SEED,
+            )
         hash_table.append(data[offset : offset + 32])
         offset += 32
 
     ops: list[RecipeOp] = []
     for _ in range(op_count):
         if offset + 5 > len(data):
-            raise SeedFormatError("Recipe op stream truncated.")
+            raise SeedFormatError(
+                "Recipe op stream truncated.",
+                next_action=ACTION_VERIFY_SEED,
+            )
         opcode, index = struct.unpack_from(">BI", data, offset)
         offset += 5
         if opcode not in (OP_REF, OP_RAW):
-            raise SeedFormatError(f"Unknown recipe opcode: {opcode}")
+            raise SeedFormatError(
+                f"Unknown recipe opcode: {opcode}",
+                next_action=ACTION_REGENERATE_SEED,
+            )
         if index >= hash_count:
-            raise SeedFormatError("Recipe op hash index out of bounds.")
+            raise SeedFormatError(
+                "Recipe op hash index out of bounds.",
+                next_action=ACTION_REGENERATE_SEED,
+            )
         ops.append(RecipeOp(opcode=opcode, hash_index=index))
 
     if offset != len(data):
-        raise SeedFormatError("Recipe section has trailing bytes.")
+        raise SeedFormatError(
+            "Recipe section has trailing bytes.",
+            next_action=ACTION_VERIFY_SEED,
+        )
     return Recipe(hash_table=hash_table, ops=ops)
 
 
@@ -148,21 +188,33 @@ def encode_raw_payloads(raw_payloads: dict[int, bytes]) -> bytes:
 
 def decode_raw_payloads(data: bytes) -> dict[int, bytes]:
     if len(data) < 4:
-        raise SeedFormatError("RAW section too short.")
+        raise SeedFormatError(
+            "RAW section too short.",
+            next_action=ACTION_VERIFY_SEED,
+        )
     count = struct.unpack_from(">I", data, 0)[0]
     offset = 4
     raw: dict[int, bytes] = {}
     for _ in range(count):
         if offset + 8 > len(data):
-            raise SeedFormatError("RAW section entry header truncated.")
+            raise SeedFormatError(
+                "RAW section entry header truncated.",
+                next_action=ACTION_VERIFY_SEED,
+            )
         index, size = struct.unpack_from(">II", data, offset)
         offset += 8
         if offset + size > len(data):
-            raise SeedFormatError("RAW section entry payload truncated.")
+            raise SeedFormatError(
+                "RAW section entry payload truncated.",
+                next_action=ACTION_VERIFY_SEED,
+            )
         raw[index] = data[offset : offset + size]
         offset += size
     if offset != len(data):
-        raise SeedFormatError("RAW section has trailing bytes.")
+        raise SeedFormatError(
+            "RAW section has trailing bytes.",
+            next_action=ACTION_VERIFY_SEED,
+        )
     return raw
 
 
@@ -218,21 +270,33 @@ def is_encrypted_seed_data(data: bytes) -> bool:
 
 def validate_encrypted_seed_envelope(blob: bytes) -> tuple[int, int, int, int]:
     if len(blob) < 4 + 2 + 1 + 1 + 8 + 32:
-        raise SeedFormatError("Encrypted seed is too short.")
+        raise SeedFormatError(
+            "Encrypted seed is too short.",
+            next_action=ACTION_REFETCH_SEED,
+        )
     (
         magic, version, salt_len, nonce_len, ciphertext_len,
     ) = struct.unpack_from(">4sHBBQ", blob, 0)
     if magic != ENC_MAGIC:
-        raise SeedFormatError("Encrypted seed magic mismatch. Expected HLE1.")
+        raise SeedFormatError(
+            "Encrypted seed magic mismatch."
+            " Expected HLE1.",
+            next_action=ACTION_REFETCH_SEED,
+        )
     if version != ENC_VERSION:
-        raise SeedFormatError(f"Unsupported encrypted seed version: {version}")
+        raise SeedFormatError(
+            "Unsupported encrypted seed"
+            f" version: {version}",
+            next_action=ACTION_UPGRADE_HELIX,
+        )
 
     header_len = 16
     payload_len = header_len + salt_len + nonce_len + ciphertext_len
     if len(blob) != payload_len + 32:
         raise SeedFormatError(
             "Encrypted seed length mismatch"
-            " or truncation detected."
+            " or truncation detected.",
+            next_action=ACTION_REFETCH_SEED,
         )
     return header_len, salt_len, nonce_len, ciphertext_len
 
@@ -291,7 +355,8 @@ def decrypt_seed_bytes(blob: bytes, passphrase: str) -> bytes:
     if not hmac.compare_digest(mac, expected_mac):
         raise SeedFormatError(
             "Encrypted seed authentication failed"
-            " (wrong key or tampering)."
+            " (wrong key or tampering).",
+            next_action=ACTION_VERIFY_ENCRYPTION,
         )
     return _xor_bytes(ciphertext, _keystream(enc_key, nonce, len(ciphertext)))
 
@@ -307,7 +372,8 @@ def serialize_seed(
     if manifest_compression not in _COMPRESSION_NAME_TO_ID:
         raise SeedFormatError(
             "Unsupported manifest compression:"
-            f" {manifest_compression}"
+            f" {manifest_compression}",
+            next_action=ACTION_CHECK_OPTIONS,
         )
 
     manifest_json = json.dumps(
@@ -372,13 +438,22 @@ def serialize_seed(
 
 def parse_seed(data: bytes) -> Seed:
     if len(data) < 8:
-        raise SeedFormatError("Seed file too short.")
+        raise SeedFormatError(
+            "Seed file too short.",
+            next_action=ACTION_REFETCH_SEED,
+        )
 
     magic, version, section_count = struct.unpack_from(">4sHH", data, 0)
     if magic != MAGIC:
-        raise SeedFormatError("Invalid seed magic; expected HLX1.")
+        raise SeedFormatError(
+            "Invalid seed magic; expected HLX1.",
+            next_action=ACTION_VERIFY_SEED,
+        )
     if version != VERSION:
-        raise SeedFormatError(f"Unsupported seed version: {version}")
+        raise SeedFormatError(
+            f"Unsupported seed version: {version}",
+            next_action=ACTION_UPGRADE_HELIX,
+        )
 
     offset = 8
     manifest_payload = None
@@ -391,11 +466,17 @@ def parse_seed(data: bytes) -> Seed:
 
     for _ in range(section_count):
         if offset + 10 > len(data):
-            raise SeedFormatError("Section header truncated.")
+            raise SeedFormatError(
+                "Section header truncated.",
+                next_action=ACTION_REFETCH_SEED,
+            )
         stype, length = struct.unpack_from(">HQ", data, offset)
         offset += 10
         if offset + length > len(data):
-            raise SeedFormatError("Section payload truncated.")
+            raise SeedFormatError(
+                "Section payload truncated.",
+                next_action=ACTION_REFETCH_SEED,
+            )
         payload = data[offset : offset + length]
         section_start = offset - 10
         offset += length
@@ -414,29 +495,42 @@ def parse_seed(data: bytes) -> Seed:
             integrity_section_start = section_start
 
     if offset != len(data):
-        raise SeedFormatError("Seed has trailing bytes outside sections.")
+        raise SeedFormatError(
+            "Seed has trailing bytes outside sections.",
+            next_action=ACTION_REFETCH_SEED,
+        )
 
     if (
         manifest_payload is None
         or recipe_payload is None
         or integrity_payload is None
     ):
-        raise SeedFormatError("Seed missing required section(s).")
+        raise SeedFormatError(
+            "Seed missing required section(s).",
+            next_action=ACTION_REGENERATE_SEED,
+        )
 
     try:
         integrity = json.loads(integrity_payload.decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
-        raise SeedFormatError("Integrity section is not valid JSON.") from exc
+        raise SeedFormatError(
+            "Integrity section is not valid JSON.",
+            next_action=ACTION_REGENERATE_SEED,
+        ) from exc
 
     if integrity_section_start is None:
-        raise SeedFormatError("Integrity section position not found.")
+        raise SeedFormatError(
+            "Integrity section position not found.",
+            next_action=ACTION_REGENERATE_SEED,
+        )
     if (
         signature_section_start is not None
         and signature_section_start > integrity_section_start
     ):
         raise SeedFormatError(
             "Signature section must appear"
-            " before integrity section."
+            " before integrity section.",
+            next_action=ACTION_REGENERATE_SEED,
         )
 
     expected_manifest_crc = zlib.crc32(manifest_payload) & 0xFFFFFFFF
@@ -453,17 +547,20 @@ def parse_seed(data: bytes) -> Seed:
     if integrity.get("manifest_crc32") != expected_manifest_crc:
         raise SeedFormatError(
             "Manifest CRC32 mismatch;"
-            " seed may be corrupted or tampered."
+            " seed may be corrupted or tampered.",
+            next_action=ACTION_REFETCH_SEED,
         )
     if integrity.get("recipe_crc32") != expected_recipe_crc:
         raise SeedFormatError(
             "Recipe CRC32 mismatch;"
-            " seed may be corrupted or tampered."
+            " seed may be corrupted or tampered.",
+            next_action=ACTION_REFETCH_SEED,
         )
     if integrity.get("payload_crc32") != expected_payload_crc:
         raise SeedFormatError(
             "Seed payload CRC32 mismatch;"
-            " seed may be corrupted or tampered."
+            " seed may be corrupted or tampered.",
+            next_action=ACTION_REFETCH_SEED,
         )
     if (
         "manifest_sha256" in integrity
@@ -472,7 +569,8 @@ def parse_seed(data: bytes) -> Seed:
     ):
         raise SeedFormatError(
             "Manifest SHA-256 mismatch;"
-            " seed may be corrupted or tampered."
+            " seed may be corrupted or tampered.",
+            next_action=ACTION_REFETCH_SEED,
         )
     if (
         "recipe_sha256" in integrity
@@ -481,7 +579,8 @@ def parse_seed(data: bytes) -> Seed:
     ):
         raise SeedFormatError(
             "Recipe SHA-256 mismatch;"
-            " seed may be corrupted or tampered."
+            " seed may be corrupted or tampered.",
+            next_action=ACTION_REFETCH_SEED,
         )
     if (
         "payload_sha256" in integrity
@@ -490,7 +589,8 @@ def parse_seed(data: bytes) -> Seed:
     ):
         raise SeedFormatError(
             "Seed payload SHA-256 mismatch;"
-            " seed may be corrupted or tampered."
+            " seed may be corrupted or tampered.",
+            next_action=ACTION_REFETCH_SEED,
         )
     if raw_payload is not None:
         expected_raw_crc = zlib.crc32(raw_payload) & 0xFFFFFFFF
@@ -501,7 +601,8 @@ def parse_seed(data: bytes) -> Seed:
         ):
             raise SeedFormatError(
                 "RAW CRC32 mismatch;"
-                " seed may be corrupted or tampered."
+                " seed may be corrupted or tampered.",
+                next_action=ACTION_REFETCH_SEED,
             )
         if (
             "raw_sha256" in integrity
@@ -510,24 +611,32 @@ def parse_seed(data: bytes) -> Seed:
         ):
             raise SeedFormatError(
                 "RAW SHA-256 mismatch;"
-                " seed may be corrupted or tampered."
+                " seed may be corrupted or tampered.",
+                next_action=ACTION_REFETCH_SEED,
             )
 
     if not manifest_payload:
-        raise SeedFormatError("Manifest section empty.")
+        raise SeedFormatError(
+            "Manifest section empty.",
+            next_action=ACTION_REGENERATE_SEED,
+        )
     compression_id = manifest_payload[0]
     manifest_name = _COMPRESSION_ID_TO_NAME.get(compression_id)
     if manifest_name is None:
         raise SeedFormatError(
             "Unknown manifest compression"
-            f" id: {compression_id}"
+            f" id: {compression_id}",
+            next_action=ACTION_REGENERATE_SEED,
         )
 
     manifest_bytes = _decompress(manifest_payload[1:], compression_id)
     try:
         manifest = json.loads(manifest_bytes.decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
-        raise SeedFormatError("Manifest JSON decode failed.") from exc
+        raise SeedFormatError(
+            "Manifest JSON decode failed.",
+            next_action=ACTION_REGENERATE_SEED,
+        ) from exc
 
     recipe = decode_recipe(recipe_payload)
     raw_payloads = (
@@ -542,10 +651,14 @@ def parse_seed(data: bytes) -> Seed:
             signature = json.loads(signature_payload.decode("utf-8"))
         except Exception as exc:  # noqa: BLE001
             raise SeedFormatError(
-                "Signature section is not valid JSON."
+                "Signature section is not valid JSON.",
+                next_action=ACTION_REGENERATE_SEED,
             ) from exc
         if signature_section_start is None:
-            raise SeedFormatError("Signature section position not found.")
+            raise SeedFormatError(
+                "Signature section position not found.",
+                next_action=ACTION_REGENERATE_SEED,
+            )
         signed_payload = data[:signature_section_start]
 
     return Seed(
@@ -563,8 +676,10 @@ def read_seed(path: str | Path, *, encryption_key: str | None = None) -> Seed:
     if is_encrypted_seed_data(blob):
         if encryption_key is None:
             raise SeedFormatError(
-                "Encrypted seed requires decryption key. "
-                "Provide --encryption-key or set HELIX_ENCRYPTION_KEY."
+                "Encrypted seed requires decryption"
+                " key. Provide --encryption-key"
+                " or set HELIX_ENCRYPTION_KEY.",
+                next_action=ACTION_PROVIDE_ENCRYPTION_KEY,
             )
         blob = decrypt_seed_bytes(blob, encryption_key)
     return parse_seed(blob)

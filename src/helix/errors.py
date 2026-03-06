@@ -69,3 +69,56 @@ class ExternalToolError(HelixError):
         next_action: str | None = None,
     ) -> None:
         super().__init__(message, code=code, next_action=next_action)
+
+
+# -- next_action templates -----------------------------------------
+ACTION_VERIFY_SEED = (
+    "Verify seed file integrity or regenerate"
+    " with `helix encode`."
+)
+ACTION_REGENERATE_SEED = (
+    "Regenerate the seed file with `helix encode`."
+)
+ACTION_REFETCH_SEED = (
+    "Re-download or re-transfer the seed file."
+)
+ACTION_UPGRADE_HELIX = (
+    "Upgrade Helix to the latest version."
+)
+ACTION_VERIFY_ENCRYPTION = (
+    "Verify encryption key/password is correct."
+)
+ACTION_PROVIDE_ENCRYPTION_KEY = (
+    "Provide --encryption-key"
+    " or set HELIX_ENCRYPTION_KEY."
+)
+ACTION_INSTALL_ZSTD = (
+    "Run `uv sync --extra zstd`"
+    " to install zstandard."
+)
+ACTION_CHECK_OPTIONS = (
+    "Check command-line options and retry."
+)
+ACTION_REPORT_BUG = (
+    "This is likely a bug. Please report it."
+)
+ACTION_CHECK_GENOME = (
+    "Check genome database,"
+    " or run `helix prime` to rebuild."
+)
+ACTION_VERIFY_SNAPSHOT = (
+    "Verify the snapshot file or regenerate"
+    " with `helix genome-snapshot`."
+)
+ACTION_VERIFY_GENES_PACK = (
+    "Verify the genes pack file or regenerate"
+    " with `helix export-genes`."
+)
+ACTION_CHECK_DISK = (
+    "Check directory permissions"
+    " and available disk space."
+)
+ACTION_ENABLE_LEARN_OR_PORTABLE = (
+    "Enable --learn or --portable"
+    " for unknown chunks."
+)

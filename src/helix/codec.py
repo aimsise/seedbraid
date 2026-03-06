@@ -17,7 +17,18 @@ from .container import (
     verify_signature,
     write_seed,
 )
-from .errors import DecodeError, HelixError
+from .errors import (
+    ACTION_CHECK_DISK,
+    ACTION_CHECK_GENOME,
+    ACTION_ENABLE_LEARN_OR_PORTABLE,
+    ACTION_REFETCH_SEED,
+    ACTION_REGENERATE_SEED,
+    ACTION_UPGRADE_HELIX,
+    ACTION_VERIFY_GENES_PACK,
+    ACTION_VERIFY_SNAPSHOT,
+    DecodeError,
+    HelixError,
+)
 from .storage import open_genome
 
 GENES_MAGIC = b"GENE1"
@@ -125,7 +136,8 @@ def encode_file(
                     "Encountered unknown chunk while"
                     " --no-learn and --no-portable"
                     " are active."
-                    " Enable --learn or --portable."
+                    " Enable --learn or --portable.",
+                    next_action=ACTION_ENABLE_LEARN_OR_PORTABLE,
                 )
 
         stats = EncodeStats(
@@ -192,7 +204,10 @@ def _resolve_chunk(
     genome,
 ) -> bytes:
     if op.hash_index >= len(hash_table):
-        raise DecodeError("Recipe refers to hash index out of bounds.")
+        raise DecodeError(
+            "Recipe refers to hash index out of bounds.",
+            next_action=ACTION_REGENERATE_SEED,
+        )
     digest = hash_table[op.hash_index]
 
     if op.opcode == OP_REF:
@@ -202,7 +217,10 @@ def _resolve_chunk(
         chunk = raw_payloads.get(op.hash_index)
         if chunk is not None:
             return chunk
-        raise DecodeError(f"Missing required chunk: {digest.hex()}")
+        raise DecodeError(
+            f"Missing required chunk: {digest.hex()}",
+            next_action=ACTION_CHECK_GENOME,
+        )
 
     chunk = raw_payloads.get(op.hash_index)
     if chunk is not None:
@@ -210,7 +228,10 @@ def _resolve_chunk(
     chunk = genome.get_chunk(digest)
     if chunk is not None:
         return chunk
-    raise DecodeError(f"Missing RAW payload and genome chunk: {digest.hex()}")
+    raise DecodeError(
+        f"Missing RAW payload and genome chunk: {digest.hex()}",
+        next_action=ACTION_CHECK_GENOME,
+    )
 
 
 def decode_file(
@@ -243,7 +264,8 @@ def decode_file(
     if expected and expected != actual:
         raise DecodeError(
             "Decoded SHA-256 mismatch: "
-        f"expected {expected}, got {actual}."
+            f"expected {expected}, got {actual}.",
+            next_action=ACTION_REFETCH_SEED,
         )
     return actual
 
@@ -470,7 +492,8 @@ def snapshot_genome(
         except OSError as exc:
             raise HelixError(
                 "Failed to write genome snapshot:"
-                f" {out_path}"
+                f" {out_path}",
+                next_action=ACTION_CHECK_DISK,
             ) from exc
 
     return {"chunks": total_chunks, "bytes": total_bytes}
@@ -494,18 +517,21 @@ def restore_genome(
                 if len(header) != 14:
                     raise HelixError(
                         "Invalid genome snapshot:"
-                        " header is truncated."
+                        " header is truncated.",
+                        next_action=ACTION_VERIFY_SNAPSHOT,
                     )
                 magic, version, chunk_count = struct.unpack(">4sHQ", header)
                 if magic != GENOME_SNAPSHOT_MAGIC:
                     raise HelixError(
                         "Invalid genome snapshot"
-                        " magic. Expected HGS1."
+                        " magic. Expected HGS1.",
+                        next_action=ACTION_VERIFY_SNAPSHOT,
                     )
                 if version != GENOME_SNAPSHOT_VERSION:
                     raise HelixError(
                         "Unsupported genome snapshot"
-                        f" version: {version}."
+                        f" version: {version}.",
+                        next_action=ACTION_UPGRADE_HELIX,
                     )
 
                 if replace:
@@ -517,7 +543,8 @@ def restore_genome(
                         raise HelixError(
                             "Invalid genome snapshot:"
                             " entry header is"
-                            " truncated."
+                            " truncated.",
+                            next_action=ACTION_VERIFY_SNAPSHOT,
                         )
                     chunk_hash, size = struct.unpack(">32sI", entry_header)
                     payload = inp.read(size)
@@ -525,7 +552,8 @@ def restore_genome(
                         raise HelixError(
                             "Invalid genome snapshot:"
                             " entry payload is"
-                            " truncated."
+                            " truncated.",
+                            next_action=ACTION_VERIFY_SNAPSHOT,
                         )
                     if genome.put_chunk(chunk_hash, payload):
                         inserted += 1
@@ -536,12 +564,14 @@ def restore_genome(
                 if trailing:
                     raise HelixError(
                         "Invalid genome snapshot:"
-                        " trailing bytes found."
+                        " trailing bytes found.",
+                        next_action=ACTION_VERIFY_SNAPSHOT,
                     )
         except OSError as exc:
             raise HelixError(
                 "Failed to read genome snapshot:"
-                f" {snapshot_path}"
+                f" {snapshot_path}",
+                next_action=ACTION_CHECK_DISK,
             ) from exc
 
     return {
@@ -596,16 +626,27 @@ def import_genes(
         with pack_path.open("rb") as inp:
             magic = inp.read(len(GENES_MAGIC))
             if magic != GENES_MAGIC:
-                raise HelixError("Invalid genes pack magic. Expected GENE1.")
+                raise HelixError(
+                    "Invalid genes pack magic."
+                    " Expected GENE1.",
+                    next_action=ACTION_VERIFY_GENES_PACK,
+                )
             count = int.from_bytes(inp.read(4), "big")
             for _ in range(count):
                 digest = inp.read(32)
                 if len(digest) != 32:
-                    raise HelixError("Truncated genes pack hash entry.")
+                    raise HelixError(
+                        "Truncated genes pack hash entry.",
+                        next_action=ACTION_VERIFY_GENES_PACK,
+                    )
                 size = int.from_bytes(inp.read(4), "big")
                 chunk = inp.read(size)
                 if len(chunk) != size:
-                    raise HelixError("Truncated genes pack payload entry.")
+                    raise HelixError(
+                        "Truncated genes pack"
+                        " payload entry.",
+                        next_action=ACTION_VERIFY_GENES_PACK,
+                    )
                 if size == 0:
                     skipped += 1
                     continue

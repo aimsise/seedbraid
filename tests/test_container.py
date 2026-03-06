@@ -11,10 +11,17 @@ from helix.container import (
     SECTION_INTEGRITY,
     Recipe,
     RecipeOp,
+    decrypt_seed_bytes,
+    encrypt_seed_bytes,
     parse_seed,
     serialize_seed,
 )
-from helix.errors import SeedFormatError
+from helix.errors import (
+    ACTION_REFETCH_SEED,
+    ACTION_VERIFY_ENCRYPTION,
+    ACTION_VERIFY_SEED,
+    SeedFormatError,
+)
 
 
 def test_seed_serialize_parse_serialize_stable() -> None:
@@ -122,3 +129,65 @@ def _tamper_integrity_field(seed_blob: bytes, key: str, value: str) -> bytes:
         out.extend(struct.pack(">HQ", stype, len(payload)))
         out.extend(payload)
     return bytes(out)
+
+
+class TestNextAction:
+    """Verify next_action is set on representative error paths."""
+
+    def test_short_seed_has_refetch_action(self) -> None:
+        with pytest.raises(SeedFormatError) as exc_info:
+            parse_seed(b"short")
+        assert exc_info.value.next_action == ACTION_REFETCH_SEED
+
+    def test_invalid_magic_has_verify_action(self) -> None:
+        blob = b"XXXX" + b"\x00" * 20
+        with pytest.raises(SeedFormatError) as exc_info:
+            parse_seed(blob)
+        assert exc_info.value.next_action == ACTION_VERIFY_SEED
+
+    def test_integrity_mismatch_has_refetch_action(self) -> None:
+        h1 = bytes.fromhex("22" * 32)
+        recipe = Recipe(
+            hash_table=[h1],
+            ops=[RecipeOp(opcode=OP_REF, hash_index=0)],
+        )
+        manifest = {
+            "format": "HLX1",
+            "version": 1,
+            "source_size": 1,
+            "source_sha256": "ab",
+            "chunker": {"name": "fixed"},
+            "portable": False,
+            "learn": True,
+        }
+        seed = serialize_seed(
+            manifest, recipe, {},
+            manifest_compression="zlib",
+        )
+        tampered = _tamper_integrity_field(
+            seed, "manifest_sha256", "0" * 64,
+        )
+        with pytest.raises(SeedFormatError) as exc_info:
+            parse_seed(tampered)
+        assert exc_info.value.next_action == ACTION_REFETCH_SEED
+
+    def test_decrypt_wrong_key_has_verify_encryption_action(
+        self,
+    ) -> None:
+        h1 = bytes.fromhex("aa" * 32)
+        recipe = Recipe(
+            hash_table=[h1],
+            ops=[RecipeOp(opcode=OP_REF, hash_index=0)],
+        )
+        manifest = {"format": "HLX1", "version": 1}
+        seed_bytes = serialize_seed(
+            manifest, recipe, {},
+            manifest_compression="none",
+        )
+        encrypted = encrypt_seed_bytes(seed_bytes, "correct")
+        with pytest.raises(SeedFormatError) as exc_info:
+            decrypt_seed_bytes(encrypted, "wrong")
+        assert (
+            exc_info.value.next_action
+            == ACTION_VERIFY_ENCRYPTION
+        )
