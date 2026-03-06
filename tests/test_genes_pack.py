@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from helix.chunking import ChunkerConfig
 from helix.codec import decode_file, encode_file, export_genes, import_genes
+from helix.errors import ACTION_VERIFY_GENES_PACK, HelixError
 
 
 def test_export_import_genes_pack_allows_decode_on_fresh_genome(
@@ -41,3 +44,29 @@ def test_export_import_genes_pack_allows_decode_on_fresh_genome(
 
     decode_file(seed, genome_b, out)
     assert out.read_bytes() == src.read_bytes()
+
+
+def test_import_genes_bad_magic_has_next_action(
+    tmp_path: Path,
+) -> None:
+    pack = tmp_path / "bad.pack"
+    pack.write_bytes(b"BADMAGIC")
+    with pytest.raises(HelixError) as exc_info:
+        import_genes(pack, tmp_path / "genome")
+    assert (
+        exc_info.value.next_action
+        == ACTION_VERIFY_GENES_PACK
+    )
+
+
+def test_import_genes_truncated_hash_has_next_action(
+    tmp_path: Path,
+) -> None:
+    pack = tmp_path / "trunc.pack"
+    pack.write_bytes(b"GENE1" + (1).to_bytes(4, "big") + b"\x00" * 10)
+    with pytest.raises(HelixError) as exc_info:
+        import_genes(pack, tmp_path / "genome")
+    assert (
+        exc_info.value.next_action
+        == ACTION_VERIFY_GENES_PACK
+    )
