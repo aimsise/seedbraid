@@ -1,3 +1,8 @@
+"""High-level encode, decode, verify, and genome management operations.
+
+Orchestrates chunking, genome storage, and HLX1 seed container I/O
+to implement the core Helix file reconstruction workflow.
+"""
 from __future__ import annotations
 
 import datetime as dt

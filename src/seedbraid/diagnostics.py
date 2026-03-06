@@ -1,3 +1,8 @@
+"""Environment and dependency diagnostics for ``helix doctor``.
+
+Checks Python version, IPFS CLI availability, genome path
+writability, and compression library status.
+"""
 from __future__ import annotations
 
 import importlib.util

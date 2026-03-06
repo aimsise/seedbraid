@@ -1,3 +1,8 @@
+"""IPFS transport: publish, fetch, pin-health, and remote pinning.
+
+Wraps the ``ipfs`` CLI for seed distribution and provides HTTP
+gateway fallback for fetch operations.
+"""
 from __future__ import annotations
 
 import os

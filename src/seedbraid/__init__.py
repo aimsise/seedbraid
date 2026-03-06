@@ -1,3 +1,5 @@
+"""Helix package root. Exports the single-source-of-truth version string."""
+
 __all__ = ["__version__"]
 
 __version__ = "1.0.0a1"
