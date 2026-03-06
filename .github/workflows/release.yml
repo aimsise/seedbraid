@@ -9,9 +9,6 @@ on:
 permissions:
   contents: read
 
-env:
-  UV_CACHE_DIR: .uv-cache
-
 jobs:
   # -- 1. verify ------------------------------------------------
   # Extract version from tag and verify it matches __version__.
@@ -43,8 +40,8 @@ jobs:
                   for t in node.targets:
                       if isinstance(t, ast.Name) and t.id == '__version__':
                           version = ast.literal_eval(node.value)
-          if version is None:
-              print('ERROR: __version__ not found', file=sys.stderr)
+          if not isinstance(version, str):
+              print('ERROR: __version__ not found or not a string', file=sys.stderr)
               sys.exit(1)
           print(version)
           ")
@@ -59,7 +56,6 @@ jobs:
   # -- 2. ci -----------------------------------------------------
   # Reuse the full CI workflow (lint, test, compat, bench-gate).
   ci:
-    needs: verify
     uses: ./.github/workflows/ci.yml
 
   # -- 3. build --------------------------------------------------
@@ -72,16 +68,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
 
       - name: Build sdist and wheel
         run: uv build
+        env:
+          UV_CACHE_DIR: .uv-cache
 
       - name: Verify built version matches tag
         run: |
@@ -104,7 +97,7 @@ jobs:
   # -- 4. publish ------------------------------------------------
   # Publish to PyPI using Trusted Publishing (OIDC).
   publish:
-    needs: [verify, ci, build]
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
