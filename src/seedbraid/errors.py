@@ -3,6 +3,7 @@
 All domain errors derive from ``HelixError`` and carry structured
 error codes plus actionable recovery hints.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

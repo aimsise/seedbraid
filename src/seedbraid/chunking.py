@@ -3,6 +3,7 @@
 Provides deterministic, shift-resilient chunk boundary detection for
 deduplication, plus a fixed-size chunker for baseline comparison.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
