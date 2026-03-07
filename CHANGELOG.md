@@ -20,14 +20,15 @@ Version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 - GenomeStorage now supports context manager protocol (T-003)
 - ruff line-length set to 79 across all source files (PEP 8 compliance)
 - CLI plan/review commands renamed to avoid built-in name conflicts
+- All error raises in container/codec now include next_action guidance (T-006)
 
 ### Fixed
-- Eliminated duplicate scrypt call in decrypt_seed_bytes (T-006)
+- Eliminated duplicate scrypt call in decrypt_seed_bytes (T-004)
 - Consistent blank line after module docstrings (T-007)
-- `__init__.py` is now single source of truth for version string
+- `__init__.py` is now single source of truth for version string (T-001)
 
 ### Security
-- scrypt parameters uplifted: N=32768, r=8, p=1 in HLE1 v2 (T-005)
+- scrypt KDF hardened to resist GPU/ASIC attacks: N=32768, r=8, p=1 in HLE1 v2 (T-005)
 
 ## [1.0.0] - 2026-02-17
 
