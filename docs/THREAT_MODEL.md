@@ -31,6 +31,15 @@
 - Optional private-manifest mode (`--manifest-private`) reduces exposed metadata fields.
 - `helix publish` warns when uploading unencrypted seeds.
 
+## KDF Cost Parameters
+- HLE1 v2 embeds scrypt parameters (n, r, p) in the header; default is n=32768, r=8, p=1.
+- Parameters are MAC-authenticated: HMAC-SHA256 covers the full payload including header.
+- Minimum scrypt_n >= 16384 is enforced before key derivation to prevent KDF cost
+  downgrade attacks where an attacker modifies the header to weaken brute-force resistance.
+- MAC verification requires the correct passphrase, so the n-floor check is the first
+  line of defense against pre-MAC header manipulation.
+- HLE1 v1 seeds use implicit n=16384 and remain decryptable for backward compatibility.
+
 ## Limitations
 - CRC32 detects accidental corruption and simple tampering, not cryptographic forgery.
 - Encryption is passphrase-based and optional; key distribution and rotation are operator-managed.

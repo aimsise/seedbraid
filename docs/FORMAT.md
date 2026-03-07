@@ -186,7 +186,8 @@ Signed payload definition:
 ## Encrypted Seed Wrapper (HLE1)
 For optional at-rest encryption, Helix wraps HLX1 bytes in `HLE1` format.
 
-Binary layout:
+### HLE1 v1 Layout (16-byte header)
+
 - magic: 4 bytes, ASCII `HLE1`
 - version: uint16 (`1`)
 - salt_len: uint8 (`16`)
@@ -197,8 +198,35 @@ Binary layout:
 - ciphertext: `ciphertext_len` bytes
 - mac: 32 bytes (`HMAC-SHA256`)
 
-Semantics:
+KDF parameters for v1 are implicit: scrypt n=16384, r=8, p=1.
+
+### HLE1 v2 Layout (24-byte header)
+
+- magic: 4 bytes, ASCII `HLE1`
+- version: uint16 (`2`)
+- salt_len: uint8 (`16`)
+- nonce_len: uint8 (`16`)
+- ciphertext_len: uint64
+- scrypt_n: uint32 big-endian (`32768`)
+- scrypt_r: uint8 (`8`)
+- scrypt_p: uint8 (`1`)
+- reserved: uint16 (`0`, must be zero; for future use)
+- salt: `salt_len` bytes
+- nonce: `nonce_len` bytes
+- ciphertext: `ciphertext_len` bytes
+- mac: 32 bytes (`HMAC-SHA256`)
+
+### Version Negotiation
+- New encryptions always produce v2 headers.
+- Decryption accepts both v1 and v2: v1 uses implicit scrypt params (n=16384),
+  v2 reads params from header.
+- scrypt_n must be >= 16384 to prevent KDF cost downgrade attacks.
+- Reserved field must be 0; non-zero values are rejected until semantics are defined.
+
+### Semantics
 - Plain HLX1 payload is encrypted with a key derived from passphrase + salt.
+- MAC covers the full payload (header + salt + nonce + ciphertext), so header
+  parameters including scrypt_n/r/p are MAC-authenticated.
 - MAC is validated before decryption output is accepted.
 - On MAC failure, parser must fail with explicit tamper/wrong-key error.
 - Helix CLI provides `helix gen-encryption-key` to generate a high-entropy
