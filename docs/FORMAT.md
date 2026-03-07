@@ -216,19 +216,54 @@ KDF parameters for v1 are implicit: scrypt n=16384, r=8, p=1.
 - ciphertext: `ciphertext_len` bytes
 - mac: 32 bytes (`HMAC-SHA256`)
 
+### HLE1 v3 Layout (28-byte header, AEAD)
+
+- magic: 4 bytes, ASCII `HLE1`
+- version: uint16 (`3`)
+- algo_id: uint8 (`0x01` = AES-256-GCM, `0x02` = ChaCha20-Poly1305)
+- salt_len: uint8 (`16`)
+- nonce_len: uint8 (`12`)
+- reserved_a: uint8 (must be `0`)
+- reserved_b: uint8 (must be `0`)
+- reserved_c: uint8 (must be `0`)
+- ciphertext_len: uint64 (includes 16-byte AEAD auth tag)
+- scrypt_n: uint32 big-endian (`32768`)
+- scrypt_r: uint8 (`8`)
+- scrypt_p: uint8 (`1`)
+- reserved2: uint16 (`0`, must be zero)
+- salt: `salt_len` bytes
+- nonce: `nonce_len` bytes
+- ciphertext: `ciphertext_len - 16` bytes
+- auth_tag: 16 bytes (GCM or Poly1305 authentication tag)
+
+Algorithm IDs:
+
+| ID | Algorithm | Standard |
+|----|-----------|----------|
+| `0x01` | AES-256-GCM | NIST SP 800-38D |
+| `0x02` | ChaCha20-Poly1305 | RFC 8439 |
+
+Key derivation: scrypt produces 32-byte base key, then HKDF-SHA256 Expand
+(RFC 5869) with `info=b"helix-hle1-v3-aead-key"` produces the 32-byte
+AEAD key. No separate MAC key is needed.
+
 ### Version Negotiation
-- New encryptions always produce v2 headers.
-- Decryption accepts both v1 and v2: v1 uses implicit scrypt params (n=16384),
-  v2 reads params from header.
+- New encryptions produce v3 headers when `cryptography` package is available;
+  fall back to v2 headers otherwise.
+- Decryption accepts v1, v2, and v3: v1 uses implicit scrypt params (n=16384),
+  v2 reads params from header, v3 reads params and algorithm from header.
 - scrypt_n must be >= 16384 to prevent KDF cost downgrade attacks.
-- Reserved field must be 0; non-zero values are rejected until semantics are defined.
+- Reserved fields must be 0; non-zero values are rejected until semantics are defined.
 
 ### Semantics
 - Plain HLX1 payload is encrypted with a key derived from passphrase + salt.
-- MAC covers the full payload (header + salt + nonce + ciphertext), so header
-  parameters including scrypt_n/r/p are MAC-authenticated.
-- MAC is validated before decryption output is accepted.
-- On MAC failure, parser must fail with explicit tamper/wrong-key error.
+- **v1/v2**: MAC covers the full payload (header + salt + nonce + ciphertext),
+  so header parameters including scrypt_n/r/p are MAC-authenticated.
+  MAC is validated before decryption output is accepted.
+- **v3**: AEAD (AES-256-GCM) with the 28-byte header as Additional Authenticated
+  Data (AAD). The header — including algorithm, KDF parameters, and nonce — is
+  bound to the ciphertext by the AEAD auth tag. No external HMAC-SHA256 MAC.
+- On authentication failure, parser must fail with explicit tamper/wrong-key error.
 - Helix CLI provides `helix gen-encryption-key` to generate a high-entropy
   passphrase for `HELIX_ENCRYPTION_KEY` usage; this helper does not change
   HLE1 wire format.

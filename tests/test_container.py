@@ -10,6 +10,9 @@ import pytest
 from helix.container import (
     _V1_HEADER_FMT,
     _V2_HEADER_FMT,
+    _V3_HEADER_SIZE,
+    AEAD_NONCE_LEN,
+    ALGO_AES_256_GCM,
     ENC_MAGIC,
     OP_RAW,
     OP_REF,
@@ -17,7 +20,9 @@ from helix.container import (
     EncryptedEnvelopeInfo,
     Recipe,
     RecipeOp,
+    _derive_aead_key,
     _derive_encryption_keys,
+    _encrypt_v2,
     _keystream,
     _xor_bytes,
     decrypt_seed_bytes,
@@ -215,7 +220,7 @@ class TestHLE1V2:
     def test_v2_header_scrypt_params_stored(self) -> None:
         """Verify n/r/p bytes in v2 header output."""
         seed_bytes = b"test-payload"
-        encrypted = encrypt_seed_bytes(seed_bytes, "key")
+        encrypted = _encrypt_v2(seed_bytes, "key")
 
         assert encrypted[:4] == ENC_MAGIC
         version = struct.unpack_from(">H", encrypted, 4)[0]
@@ -229,10 +234,10 @@ class TestHLE1V2:
         assert p == 1
         assert reserved == 0
 
-    def test_validate_returns_envelope_info(self) -> None:
-        """validate returns EncryptedEnvelopeInfo."""
+    def test_validate_returns_envelope_info_v2(self) -> None:
+        """validate returns EncryptedEnvelopeInfo for v2."""
         seed_bytes = b"info-test"
-        encrypted = encrypt_seed_bytes(seed_bytes, "k")
+        encrypted = _encrypt_v2(seed_bytes, "k")
         info = validate_encrypted_seed_envelope(encrypted)
         assert isinstance(info, EncryptedEnvelopeInfo)
         assert info.version == 2
@@ -283,3 +288,116 @@ class TestHLE1V2:
             exc_info.value.next_action
             == ACTION_UPGRADE_HELIX
         )
+
+
+class TestHLE1V3:
+    """HLE1 v3 AEAD (AES-256-GCM) tests."""
+
+    def test_v3_roundtrip(self) -> None:
+        """v3 encrypt -> decrypt roundtrip."""
+        plaintext = b"aead-roundtrip-test-payload"
+        encrypted = encrypt_seed_bytes(plaintext, "pw")
+        assert encrypted[:4] == ENC_MAGIC
+        version = struct.unpack_from(">H", encrypted, 4)[0]
+        assert version == 3
+        result = decrypt_seed_bytes(encrypted, "pw")
+        assert result == plaintext
+
+    def test_v3_header_fields(self) -> None:
+        """Verify v3 header fields."""
+        encrypted = encrypt_seed_bytes(b"hdr", "k")
+        info = validate_encrypted_seed_envelope(encrypted)
+        assert info.version == 3
+        assert info.header_len == _V3_HEADER_SIZE
+        assert info.algo_id == ALGO_AES_256_GCM
+        assert info.nonce_len == AEAD_NONCE_LEN
+        assert info.scrypt_n == 32768
+
+    def test_v3_tampered_ciphertext_rejected(self) -> None:
+        """Tampered ciphertext fails AEAD auth."""
+        encrypted = encrypt_seed_bytes(b"tamper-ct", "k")
+        ba = bytearray(encrypted)
+        ba[-17] ^= 0xFF
+        with pytest.raises(
+            SeedFormatError, match="authentication failed",
+        ):
+            decrypt_seed_bytes(bytes(ba), "k")
+
+    def test_v3_tampered_header_rejected(self) -> None:
+        """Tampered header (AAD) fails AEAD auth."""
+        encrypted = encrypt_seed_bytes(b"tamper-hdr", "k")
+        # Tamper scrypt_r (offset 24) — passes validation
+        # but changes AAD, causing AEAD auth failure.
+        ba = bytearray(encrypted)
+        ba[24] = 9  # r=9 instead of 8
+        with pytest.raises(
+            SeedFormatError, match="authentication failed",
+        ):
+            decrypt_seed_bytes(bytes(ba), "k")
+
+    def test_v3_wrong_passphrase_rejected(self) -> None:
+        """Wrong passphrase fails AEAD auth."""
+        encrypted = encrypt_seed_bytes(b"wrong-pw", "correct")
+        with pytest.raises(
+            SeedFormatError, match="authentication failed",
+        ):
+            decrypt_seed_bytes(encrypted, "wrong")
+
+    def test_v3_unknown_algo_rejected(self) -> None:
+        """Unknown algo_id is rejected at validation."""
+        encrypted = encrypt_seed_bytes(b"algo", "k")
+        ba = bytearray(encrypted)
+        ba[6] = 0xFF  # invalid algo_id
+        with pytest.raises(
+            SeedFormatError, match="Unknown encryption",
+        ):
+            validate_encrypted_seed_envelope(bytes(ba))
+
+    def test_v3_reserved_nonzero_rejected(self) -> None:
+        """v3 reserved field nonzero is rejected."""
+        encrypted = encrypt_seed_bytes(b"res", "k")
+        ba = bytearray(encrypted)
+        ba[9] = 0x01  # reserved_a
+        with pytest.raises(
+            SeedFormatError, match="non-zero",
+        ):
+            validate_encrypted_seed_envelope(bytes(ba))
+
+    def test_v3_reserved2_nonzero_rejected(self) -> None:
+        """v3 reserved2 field nonzero is rejected."""
+        encrypted = encrypt_seed_bytes(b"res2", "k")
+        ba = bytearray(encrypted)
+        ba[26] = 0x01  # reserved2 high byte
+        with pytest.raises(
+            SeedFormatError, match="non-zero",
+        ):
+            validate_encrypted_seed_envelope(bytes(ba))
+
+    def test_v3_truncated_rejected(self) -> None:
+        """Truncated v3 blob is rejected."""
+        encrypted = encrypt_seed_bytes(b"trunc", "k")
+        with pytest.raises(SeedFormatError):
+            validate_encrypted_seed_envelope(
+                encrypted[:20],
+            )
+
+    def test_hkdf_deterministic(self) -> None:
+        """Same inputs produce same AEAD key."""
+        salt = b"\xaa" * 16
+        k1 = _derive_aead_key("pass", salt)
+        k2 = _derive_aead_key("pass", salt)
+        assert k1 == k2
+        assert len(k1) == 32
+
+    def test_v3_empty_plaintext(self) -> None:
+        """v3 handles zero-length plaintext."""
+        encrypted = encrypt_seed_bytes(b"", "k")
+        result = decrypt_seed_bytes(encrypted, "k")
+        assert result == b""
+
+    def test_v2_still_decryptable(self) -> None:
+        """v2 blobs remain decryptable after v3 code."""
+        plaintext = b"v2-compat"
+        v2_blob = _encrypt_v2(plaintext, "v2key")
+        result = decrypt_seed_bytes(v2_blob, "v2key")
+        assert result == plaintext

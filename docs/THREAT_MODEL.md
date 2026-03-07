@@ -68,8 +68,29 @@
 - Publish only seeds safe for public exposure (or strongly encrypted).
 - Use signatures and reproducible verify workflow for consumer trust.
 
+## AEAD Migration (HLE1 v3)
+- HLE1 v3 replaces the custom SHA-256 counter-mode stream cipher with
+  AES-256-GCM (NIST SP 800-38D), eliminating the non-standard encryption
+  primitive.
+- Key derivation uses HKDF-SHA256 (RFC 5869) instead of ad-hoc
+  `SHA-256(base_key || label)`, providing formal domain separation.
+- AEAD provides authenticated encryption in a single primitive; the external
+  HMAC-SHA256 MAC used in v1/v2 is no longer needed for v3.
+- The 28-byte header is passed as AAD, binding algorithm ID, scrypt parameters,
+  salt length, and nonce length to the ciphertext. This prevents KDF cost
+  downgrade attacks and header manipulation without a separate MAC.
+- Algorithm agility is supported via the `algo_id` header field: `0x01` for
+  AES-256-GCM, `0x02` reserved for ChaCha20-Poly1305.
+- Nonces are 12-byte random (`os.urandom(12)`), suitable for both AES-GCM and
+  ChaCha20-Poly1305. Collision probability is negligible for < 2^32 encryptions.
+- The `cryptography` package (PyCA) is an optional dependency (`crypto` extra).
+  When unavailable, encryption falls back to v2 format; v3 decryption requires
+  the package and raises a clear error if missing.
+- v1/v2 read support is preserved; existing encrypted seeds remain decryptable
+  without code changes.
+
 ## Encryption Option Policy (Future)
 - Add optional envelope encryption section:
-  - AEAD-encrypted payload sections
   - key wrapping via recipient public key(s)
 - Keep manifest split into public/private parts to reduce metadata leakage.
+- Consider KDF migration from scrypt to Argon2id (separate ticket).

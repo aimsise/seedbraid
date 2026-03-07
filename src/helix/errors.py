@@ -128,3 +128,7 @@ ACTION_ENABLE_LEARN_OR_PORTABLE = (
     "Enable --learn or --portable"
     " for unknown chunks."
 )
+ACTION_INSTALL_CRYPTO = (
+    "Run `uv sync --extra crypto`"
+    " to install cryptography."
+)
