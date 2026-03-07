@@ -49,8 +49,12 @@ Migration policy:
 - Integrity uses CRC32 + SHA-256 digests.
 - Optional seed signatures use HMAC-SHA256 in this iteration (`helix sign` and `verify --require-signature`).
 - Optional encryption uses HLE1 wrapper around HLX1 payload for backward-compatible rollout.
-- HLE1 encryption wrapper uses versioned headers (v1 fixed scrypt params, v2+ embedded
-  params) to enable KDF evolution without breaking backward read compatibility.
+- HLE1 encryption wrapper uses versioned headers (v1 fixed scrypt params, v2 embedded
+  params, v3 AEAD with algorithm identifier) to enable crypto evolution without
+  breaking backward read compatibility.
+- HLE1 v3 uses AES-256-GCM (NIST SP 800-38D) with HKDF-SHA256 key derivation,
+  replacing the custom SHA-256 counter-mode cipher and external HMAC-SHA256 MAC.
+  Requires optional `cryptography` package; falls back to v2 when unavailable.
 - Optional `manifest-private` mode reduces metadata leakage at the cost of weaker post-restore provenance metadata.
 - `helix publish` warns on unencrypted seed publication to reduce accidental public leakage.
 - IPFS fetch path includes retry/backoff and optional HTTP gateway fallback for resilience.

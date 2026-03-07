@@ -80,14 +80,14 @@ def test_verify_strict_with_encrypted_seed(tmp_path: Path) -> None:
     assert report.ok
 
 
-def test_encrypted_v2_roundtrip(tmp_path: Path) -> None:
-    """New encryptions use v2 format with n=32768."""
+def test_encrypted_v3_roundtrip(tmp_path: Path) -> None:
+    """New encryptions use v3 AEAD format with n=32768."""
     src = tmp_path / "source.bin"
     seed = tmp_path / "seed.hlx"
     out = tmp_path / "decoded.bin"
     genome = tmp_path / "genome"
 
-    src.write_bytes(b"v2-test-data" * 3000)
+    src.write_bytes(b"v3-test-data" * 3000)
     cfg = ChunkerConfig(
         min_size=1024,
         avg_size=4096,
@@ -104,15 +104,15 @@ def test_encrypted_v2_roundtrip(tmp_path: Path) -> None:
         learn=True,
         portable=False,
         manifest_compression="zlib",
-        encryption_key="v2key",
+        encryption_key="v3key",
     )
 
     blob = seed.read_bytes()
     assert blob[:4] == b"HLE1"
     version = struct.unpack_from(">H", blob, 4)[0]
-    assert version == 2
-    scrypt_n = struct.unpack_from(">I", blob, 16)[0]
+    assert version == 3
+    scrypt_n = struct.unpack_from(">I", blob, 20)[0]
     assert scrypt_n == 32768
 
-    decode_file(seed, genome, out, encryption_key="v2key")
+    decode_file(seed, genome, out, encryption_key="v3key")
     assert out.read_bytes() == src.read_bytes()
