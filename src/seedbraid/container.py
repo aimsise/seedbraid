@@ -33,7 +33,16 @@ from .errors import (
 MAGIC = b"HLX1"
 VERSION = 1
 ENC_MAGIC = b"HLE1"
-ENC_VERSION = 1
+ENC_VERSION = 2
+
+SCRYPT_N_DEFAULT = 32768
+SCRYPT_N_V1 = 16384  # fixed n for HLE1 v1 header
+SCRYPT_N_MIN = 16384
+SCRYPT_R_DEFAULT = 8
+SCRYPT_P_DEFAULT = 1
+
+_V1_HEADER_FMT = ">4sHBBQ"
+_V2_HEADER_FMT = ">4sHBBQIBBH"
 
 SECTION_MANIFEST = 1
 SECTION_RECIPE = 2
@@ -239,15 +248,21 @@ def _hmac_sha256_hex(data: bytes, key: str) -> str:
 
 
 def _derive_encryption_keys(
-    passphrase: str, salt: bytes,
+    passphrase: str,
+    salt: bytes,
+    *,
+    n: int = SCRYPT_N_DEFAULT,
+    r: int = SCRYPT_R_DEFAULT,
+    p: int = SCRYPT_P_DEFAULT,
 ) -> tuple[bytes, bytes]:
     base_key = hashlib.scrypt(
         passphrase.encode("utf-8"),
         salt=salt,
-        n=16384,
-        r=8,
-        p=1,
+        n=n,
+        r=r,
+        p=p,
         dklen=32,
+        maxmem=256 * r * n + 1024 * 1024,
     )
     enc_key = hashlib.sha256(base_key + b"enc").digest()
     mac_key = hashlib.sha256(base_key + b"mac").digest()
@@ -276,7 +291,21 @@ def is_encrypted_seed_data(data: bytes) -> bool:
     return len(data) >= 4 and data[:4] == ENC_MAGIC
 
 
-def validate_encrypted_seed_envelope(blob: bytes) -> tuple[int, int, int, int]:
+@dataclass(frozen=True)
+class EncryptedEnvelopeInfo:
+    version: int
+    header_len: int
+    salt_len: int
+    nonce_len: int
+    ciphertext_len: int
+    scrypt_n: int
+    scrypt_r: int
+    scrypt_p: int
+
+
+def validate_encrypted_seed_envelope(
+    blob: bytes,
+) -> EncryptedEnvelopeInfo:
     if len(blob) < 4 + 2 + 1 + 1 + 8 + 32:
         raise SeedFormatError(
             "Encrypted seed is too short.",
@@ -291,22 +320,62 @@ def validate_encrypted_seed_envelope(blob: bytes) -> tuple[int, int, int, int]:
             " Expected HLE1.",
             next_action=ACTION_REFETCH_SEED,
         )
-    if version != ENC_VERSION:
+
+    if version == 1:
+        header_len = 16
+        scrypt_n = SCRYPT_N_V1
+        scrypt_r = SCRYPT_R_DEFAULT
+        scrypt_p = SCRYPT_P_DEFAULT
+    elif version == 2:
+        if len(blob) < 24 + 32:
+            raise SeedFormatError(
+                "Encrypted seed v2 header"
+                " truncated.",
+                next_action=ACTION_REFETCH_SEED,
+            )
+        (
+            scrypt_n, scrypt_r, scrypt_p, reserved,
+        ) = struct.unpack_from(">IBBH", blob, 16)
+        if scrypt_n < SCRYPT_N_MIN:
+            raise SeedFormatError(
+                f"scrypt n={scrypt_n} below"
+                f" minimum {SCRYPT_N_MIN};"
+                " possible downgrade attack.",
+                next_action=ACTION_REFETCH_SEED,
+            )
+        if reserved != 0:
+            raise SeedFormatError(
+                "Reserved field in encrypted"
+                " seed header is non-zero.",
+                next_action=ACTION_UPGRADE_HELIX,
+            )
+        header_len = 24
+    else:
         raise SeedFormatError(
             "Unsupported encrypted seed"
             f" version: {version}",
             next_action=ACTION_UPGRADE_HELIX,
         )
 
-    header_len = 16
-    payload_len = header_len + salt_len + nonce_len + ciphertext_len
+    payload_len = (
+        header_len + salt_len + nonce_len + ciphertext_len
+    )
     if len(blob) != payload_len + 32:
         raise SeedFormatError(
             "Encrypted seed length mismatch"
             " or truncation detected.",
             next_action=ACTION_REFETCH_SEED,
         )
-    return header_len, salt_len, nonce_len, ciphertext_len
+    return EncryptedEnvelopeInfo(
+        version=version,
+        header_len=header_len,
+        salt_len=salt_len,
+        nonce_len=nonce_len,
+        ciphertext_len=ciphertext_len,
+        scrypt_n=scrypt_n,
+        scrypt_r=scrypt_r,
+        scrypt_p=scrypt_p,
+    )
 
 
 def _build_signature_payload(
@@ -335,9 +404,11 @@ def encrypt_seed_bytes(seed_bytes: bytes, passphrase: str) -> bytes:
     )
 
     header = struct.pack(
-        ">4sHBBQ",
+        _V2_HEADER_FMT,
         ENC_MAGIC, ENC_VERSION,
         len(salt), len(nonce), len(ciphertext),
+        SCRYPT_N_DEFAULT, SCRYPT_R_DEFAULT,
+        SCRYPT_P_DEFAULT, 0,
     )
     payload = header + salt + nonce + ciphertext
     mac = hmac.new(mac_key, payload, hashlib.sha256).digest()
@@ -345,28 +416,36 @@ def encrypt_seed_bytes(seed_bytes: bytes, passphrase: str) -> bytes:
 
 
 def decrypt_seed_bytes(blob: bytes, passphrase: str) -> bytes:
-    (
-        header_len, salt_len, nonce_len, ciphertext_len,
-    ) = validate_encrypted_seed_envelope(blob)
+    info = validate_encrypted_seed_envelope(blob)
 
-    salt_off = header_len
-    nonce_off = salt_off + salt_len
-    ciphertext_off = nonce_off + nonce_len
+    salt_off = info.header_len
+    nonce_off = salt_off + info.salt_len
+    ciphertext_off = nonce_off + info.nonce_len
     salt = blob[salt_off:nonce_off]
     nonce = blob[nonce_off:ciphertext_off]
-    ciphertext = blob[ciphertext_off : ciphertext_off + ciphertext_len]
+    ciphertext = blob[
+        ciphertext_off : ciphertext_off + info.ciphertext_len
+    ]
     mac = blob[-32:]
 
-    enc_key, mac_key = _derive_encryption_keys(passphrase, salt)
+    enc_key, mac_key = _derive_encryption_keys(
+        passphrase, salt,
+        n=info.scrypt_n, r=info.scrypt_r, p=info.scrypt_p,
+    )
     payload = blob[:-32]
-    expected_mac = hmac.new(mac_key, payload, hashlib.sha256).digest()
+    expected_mac = hmac.new(
+        mac_key, payload, hashlib.sha256,
+    ).digest()
     if not hmac.compare_digest(mac, expected_mac):
         raise SeedFormatError(
             "Encrypted seed authentication failed"
             " (wrong key or tampering).",
             next_action=ACTION_VERIFY_ENCRYPTION,
         )
-    return _xor_bytes(ciphertext, _keystream(enc_key, nonce, len(ciphertext)))
+    return _xor_bytes(
+        ciphertext,
+        _keystream(enc_key, nonce, len(ciphertext)),
+    )
 
 
 def serialize_seed(
