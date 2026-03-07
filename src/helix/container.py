@@ -524,14 +524,15 @@ def serialize_seed(
     )
 
 
-def parse_seed(data: bytes) -> Seed:
+def _parse_hlx1_header(data: bytes) -> int:
     if len(data) < 8:
         raise SeedFormatError(
             "Seed file too short.",
             next_action=ACTION_REFETCH_SEED,
         )
-
-    magic, version, section_count = struct.unpack_from(">4sHH", data, 0)
+    magic, version, section_count = struct.unpack_from(
+        ">4sHH", data, 0,
+    )
     if magic != MAGIC:
         raise SeedFormatError(
             "Invalid seed magic; expected HLX1.",
@@ -542,15 +543,15 @@ def parse_seed(data: bytes) -> Seed:
             f"Unsupported seed version: {version}",
             next_action=ACTION_UPGRADE_HELIX,
         )
+    return int(section_count)
 
+
+def _scan_hlx1_sections(
+    data: bytes, section_count: int,
+) -> tuple[dict[int, bytes], dict[int, int]]:
     offset = 8
-    manifest_payload = None
-    recipe_payload = None
-    raw_payload = None
-    signature_payload = None
-    integrity_payload = None
-    signature_section_start = None
-    integrity_section_start = None
+    payloads: dict[int, bytes] = {}
+    section_starts: dict[int, int] = {}
 
     for _ in range(section_count):
         if offset + 10 > len(data):
@@ -558,62 +559,65 @@ def parse_seed(data: bytes) -> Seed:
                 "Section header truncated.",
                 next_action=ACTION_REFETCH_SEED,
             )
-        stype, length = struct.unpack_from(">HQ", data, offset)
+        section_start = offset
+        stype, length = struct.unpack_from(
+            ">HQ", data, offset,
+        )
         offset += 10
         if offset + length > len(data):
             raise SeedFormatError(
                 "Section payload truncated.",
                 next_action=ACTION_REFETCH_SEED,
             )
-        payload = data[offset : offset + length]
-        section_start = offset - 10
+        payloads[stype] = data[offset : offset + length]
+        section_starts[stype] = section_start
         offset += length
-
-        if stype == SECTION_MANIFEST:
-            manifest_payload = payload
-        elif stype == SECTION_RECIPE:
-            recipe_payload = payload
-        elif stype == SECTION_RAW:
-            raw_payload = payload
-        elif stype == SECTION_SIGNATURE:
-            signature_payload = payload
-            signature_section_start = section_start
-        elif stype == SECTION_INTEGRITY:
-            integrity_payload = payload
-            integrity_section_start = section_start
 
     if offset != len(data):
         raise SeedFormatError(
-            "Seed has trailing bytes outside sections.",
+            "Seed has trailing bytes outside"
+            " sections.",
             next_action=ACTION_REFETCH_SEED,
         )
 
+    return payloads, section_starts
+
+
+def _check_required_sections(
+    payloads: dict[int, bytes],
+) -> None:
     if (
-        manifest_payload is None
-        or recipe_payload is None
-        or integrity_payload is None
+        SECTION_MANIFEST not in payloads
+        or SECTION_RECIPE not in payloads
+        or SECTION_INTEGRITY not in payloads
     ):
         raise SeedFormatError(
             "Seed missing required section(s).",
             next_action=ACTION_REGENERATE_SEED,
         )
 
+
+def _verify_hlx1_integrity(
+    data: bytes,
+    payloads: dict[int, bytes],
+    section_starts: dict[int, int],
+) -> None:
+    integrity_payload = payloads[SECTION_INTEGRITY]
     try:
-        integrity = json.loads(integrity_payload.decode("utf-8"))
+        integrity = json.loads(
+            integrity_payload.decode("utf-8"),
+        )
     except Exception as exc:  # noqa: BLE001
         raise SeedFormatError(
             "Integrity section is not valid JSON.",
             next_action=ACTION_REGENERATE_SEED,
         ) from exc
 
-    if integrity_section_start is None:
-        raise SeedFormatError(
-            "Integrity section position not found.",
-            next_action=ACTION_REPORT_BUG,
-        )
+    integrity_start = section_starts[SECTION_INTEGRITY]
+    sig_start = section_starts.get(SECTION_SIGNATURE)
     if (
-        signature_section_start is not None
-        and signature_section_start > integrity_section_start
+        sig_start is not None
+        and sig_start > integrity_start
     ):
         raise SeedFormatError(
             "Signature section must appear"
@@ -621,139 +625,163 @@ def parse_seed(data: bytes) -> Seed:
             next_action=ACTION_REGENERATE_SEED,
         )
 
-    expected_manifest_crc = zlib.crc32(manifest_payload) & 0xFFFFFFFF
-    expected_recipe_crc = zlib.crc32(recipe_payload) & 0xFFFFFFFF
-    expected_payload_crc = (
-        zlib.crc32(data[:integrity_section_start]) & 0xFFFFFFFF
-    )
-    expected_manifest_sha256 = _sha256_hex(manifest_payload)
-    expected_recipe_sha256 = _sha256_hex(recipe_payload)
-    expected_payload_sha256 = _sha256_hex(
-        data[:integrity_section_start]
-    )
+    manifest_pl = payloads[SECTION_MANIFEST]
+    recipe_pl = payloads[SECTION_RECIPE]
+    pre_integrity = data[:integrity_start]
 
-    if integrity.get("manifest_crc32") != expected_manifest_crc:
-        raise SeedFormatError(
-            "Manifest CRC32 mismatch;"
-            " seed may be corrupted or tampered.",
-            next_action=ACTION_REFETCH_SEED,
-        )
-    if integrity.get("recipe_crc32") != expected_recipe_crc:
-        raise SeedFormatError(
-            "Recipe CRC32 mismatch;"
-            " seed may be corrupted or tampered.",
-            next_action=ACTION_REFETCH_SEED,
-        )
-    if integrity.get("payload_crc32") != expected_payload_crc:
-        raise SeedFormatError(
-            "Seed payload CRC32 mismatch;"
-            " seed may be corrupted or tampered.",
-            next_action=ACTION_REFETCH_SEED,
-        )
-    if (
-        "manifest_sha256" in integrity
-        and integrity["manifest_sha256"]
-        != expected_manifest_sha256
-    ):
-        raise SeedFormatError(
-            "Manifest SHA-256 mismatch;"
-            " seed may be corrupted or tampered.",
-            next_action=ACTION_REFETCH_SEED,
-        )
-    if (
-        "recipe_sha256" in integrity
-        and integrity["recipe_sha256"]
-        != expected_recipe_sha256
-    ):
-        raise SeedFormatError(
-            "Recipe SHA-256 mismatch;"
-            " seed may be corrupted or tampered.",
-            next_action=ACTION_REFETCH_SEED,
-        )
-    if (
-        "payload_sha256" in integrity
-        and integrity["payload_sha256"]
-        != expected_payload_sha256
-    ):
-        raise SeedFormatError(
-            "Seed payload SHA-256 mismatch;"
-            " seed may be corrupted or tampered.",
-            next_action=ACTION_REFETCH_SEED,
-        )
+    m_crc = zlib.crc32(manifest_pl) & 0xFFFFFFFF
+    r_crc = zlib.crc32(recipe_pl) & 0xFFFFFFFF
+    p_crc = zlib.crc32(pre_integrity) & 0xFFFFFFFF
+    for field, expected, label in [
+        ("manifest_crc32", m_crc, "Manifest"),
+        ("recipe_crc32", r_crc, "Recipe"),
+        ("payload_crc32", p_crc, "Seed payload"),
+    ]:
+        if integrity.get(field) != expected:
+            raise SeedFormatError(
+                f"{label} CRC32 mismatch;"
+                " seed may be corrupted"
+                " or tampered.",
+                next_action=ACTION_REFETCH_SEED,
+            )
+
+    m_sha = _sha256_hex(manifest_pl)
+    r_sha = _sha256_hex(recipe_pl)
+    p_sha = _sha256_hex(pre_integrity)
+    for field, exp_sha, label in [
+        ("manifest_sha256", m_sha, "Manifest"),
+        ("recipe_sha256", r_sha, "Recipe"),
+        ("payload_sha256", p_sha, "Seed payload"),
+    ]:
+        if (
+            field in integrity
+            and integrity[field] != exp_sha
+        ):
+            raise SeedFormatError(
+                f"{label} SHA-256 mismatch;"
+                " seed may be corrupted"
+                " or tampered.",
+                next_action=ACTION_REFETCH_SEED,
+            )
+
+    raw_payload = payloads.get(SECTION_RAW)
     if raw_payload is not None:
-        expected_raw_crc = zlib.crc32(raw_payload) & 0xFFFFFFFF
-        expected_raw_sha256 = _sha256_hex(raw_payload)
+        raw_crc = zlib.crc32(raw_payload) & 0xFFFFFFFF
+        raw_sha = _sha256_hex(raw_payload)
         if (
             "raw_crc32" in integrity
-            and integrity["raw_crc32"] != expected_raw_crc
+            and integrity["raw_crc32"] != raw_crc
         ):
             raise SeedFormatError(
                 "RAW CRC32 mismatch;"
-                " seed may be corrupted or tampered.",
+                " seed may be corrupted"
+                " or tampered.",
                 next_action=ACTION_REFETCH_SEED,
             )
         if (
             "raw_sha256" in integrity
-            and integrity["raw_sha256"]
-            != expected_raw_sha256
+            and integrity["raw_sha256"] != raw_sha
         ):
             raise SeedFormatError(
                 "RAW SHA-256 mismatch;"
-                " seed may be corrupted or tampered.",
+                " seed may be corrupted"
+                " or tampered.",
                 next_action=ACTION_REFETCH_SEED,
             )
 
-    if not manifest_payload:
+
+def _decode_manifest_payload(
+    payload: bytes,
+) -> tuple[dict[str, Any], str]:
+    if not payload:
         raise SeedFormatError(
             "Manifest section empty.",
             next_action=ACTION_REGENERATE_SEED,
         )
-    compression_id = manifest_payload[0]
-    manifest_name = _COMPRESSION_ID_TO_NAME.get(compression_id)
-    if manifest_name is None:
+    compression_id = payload[0]
+    compression_name = _COMPRESSION_ID_TO_NAME.get(
+        compression_id,
+    )
+    if compression_name is None:
         raise SeedFormatError(
             "Unknown manifest compression"
             f" id: {compression_id}",
             next_action=ACTION_REGENERATE_SEED,
         )
-
-    manifest_bytes = _decompress(manifest_payload[1:], compression_id)
+    manifest_bytes = _decompress(
+        payload[1:], compression_id,
+    )
     try:
-        manifest = json.loads(manifest_bytes.decode("utf-8"))
+        manifest = json.loads(
+            manifest_bytes.decode("utf-8"),
+        )
     except Exception as exc:  # noqa: BLE001
         raise SeedFormatError(
             "Manifest JSON decode failed.",
             next_action=ACTION_REGENERATE_SEED,
         ) from exc
+    return manifest, compression_name
 
-    recipe = decode_recipe(recipe_payload)
+
+def _decode_signature_section(
+    payload: bytes | None,
+    section_start: int | None,
+    data: bytes,
+) -> tuple[dict[str, Any] | None, bytes | None]:
+    if payload is None:
+        return None, None
+    try:
+        signature = json.loads(
+            payload.decode("utf-8"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise SeedFormatError(
+            "Signature section is not valid JSON.",
+            next_action=ACTION_REGENERATE_SEED,
+        ) from exc
+    if section_start is None:
+        raise SeedFormatError(
+            "Signature section position"
+            " not found.",
+            next_action=ACTION_REPORT_BUG,
+        )
+    return signature, data[:section_start]
+
+
+def parse_seed(data: bytes) -> Seed:
+    section_count = _parse_hlx1_header(data)
+    payloads, section_starts = _scan_hlx1_sections(
+        data, section_count,
+    )
+    _check_required_sections(payloads)
+    _verify_hlx1_integrity(
+        data, payloads, section_starts,
+    )
+
+    manifest, compression_name = (
+        _decode_manifest_payload(
+            payloads[SECTION_MANIFEST],
+        )
+    )
+    recipe = decode_recipe(payloads[SECTION_RECIPE])
     raw_payloads = (
-        decode_raw_payloads(raw_payload)
-        if raw_payload is not None
+        decode_raw_payloads(payloads[SECTION_RAW])
+        if SECTION_RAW in payloads
         else {}
     )
-    signature = None
-    signed_payload = None
-    if signature_payload is not None:
-        try:
-            signature = json.loads(signature_payload.decode("utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            raise SeedFormatError(
-                "Signature section is not valid JSON.",
-                next_action=ACTION_REGENERATE_SEED,
-            ) from exc
-        if signature_section_start is None:
-            raise SeedFormatError(
-                "Signature section position not found.",
-                next_action=ACTION_REPORT_BUG,
-            )
-        signed_payload = data[:signature_section_start]
+    signature, signed_payload = (
+        _decode_signature_section(
+            payloads.get(SECTION_SIGNATURE),
+            section_starts.get(SECTION_SIGNATURE),
+            data,
+        )
+    )
 
     return Seed(
         manifest=manifest,
         recipe=recipe,
         raw_payloads=raw_payloads,
-        manifest_compression=manifest_name,
+        manifest_compression=compression_name,
         signature=signature,
         signed_payload=signed_payload,
     )
