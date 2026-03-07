@@ -20,6 +20,7 @@ from .container import (
     OP_REF,
     Recipe,
     RecipeOp,
+    Seed,
     read_seed,
     verify_signature,
     write_seed,
@@ -277,6 +278,138 @@ def decode_file(
     return actual
 
 
+def _fail_report(
+    reason: str | None,
+    expected_sha256: str | None = None,
+    actual_sha256: str | None = None,
+) -> VerifyReport:
+    return VerifyReport(
+        ok=False,
+        missing_hashes=[],
+        missing_count=0,
+        expected_sha256=expected_sha256,
+        actual_sha256=actual_sha256,
+        reason=reason,
+    )
+
+
+def _verify_signature_phase(
+    seed: Seed,
+    require_signature: bool,
+    signature_key: str | None,
+    expected_sha256: str | None,
+) -> VerifyReport | None:
+    if require_signature and seed.signature is None:
+        return _fail_report(
+            "Signature is required but missing.",
+            expected_sha256=expected_sha256,
+        )
+    if seed.signature is not None:
+        if signature_key is None:
+            if require_signature:
+                return _fail_report(
+                    "Signature key is required"
+                    " to verify signed seed.",
+                    expected_sha256=expected_sha256,
+                )
+        else:
+            ok, sig_reason = verify_signature(
+                seed, signature_key,
+            )
+            if not ok:
+                return _fail_report(
+                    sig_reason,
+                    expected_sha256=expected_sha256,
+                )
+    return None
+
+
+def _check_chunk_availability(
+    seed: Seed,
+    genome: GenomeStorage,
+    expected_sha256: str | None,
+) -> VerifyReport | None:
+    missing: list[str] = []
+    for op in seed.recipe.ops:
+        if op.hash_index >= len(seed.recipe.hash_table):
+            return _fail_report(
+                "Recipe index out of bounds.",
+                expected_sha256=expected_sha256,
+            )
+        digest = seed.recipe.hash_table[op.hash_index]
+        has_genome = genome.has_chunk(digest)
+        has_raw = op.hash_index in seed.raw_payloads
+        if (
+            op.opcode == OP_REF
+            and not (has_genome or has_raw)
+        ):
+            missing.append(digest.hex())
+        if (
+            op.opcode == OP_RAW
+            and not (has_raw or has_genome)
+        ):
+            missing.append(digest.hex())
+
+    if missing:
+        unique_missing = sorted(set(missing))
+        return VerifyReport(
+            ok=False,
+            missing_hashes=unique_missing,
+            missing_count=len(unique_missing),
+            expected_sha256=expected_sha256,
+            actual_sha256=None,
+            reason="Missing required chunks.",
+        )
+    return None
+
+
+def _strict_reconstruct(
+    seed: Seed,
+    genome: GenomeStorage,
+    expected_size: int | None,
+    expected_sha256: str | None,
+) -> VerifyReport:
+    h = hashlib.sha256()
+    actual_size = 0
+    for op in seed.recipe.ops:
+        chunk = _resolve_chunk(
+            op,
+            seed.recipe.hash_table,
+            seed.raw_payloads,
+            genome,
+        )
+        h.update(chunk)
+        actual_size += len(chunk)
+
+    if (
+        isinstance(expected_size, int)
+        and expected_size != actual_size
+    ):
+        return _fail_report(
+            "Reconstructed size mismatch: "
+            f"expected {expected_size},"
+            f" got {actual_size}.",
+            expected_sha256=expected_sha256,
+        )
+
+    actual = h.hexdigest()
+    if expected_sha256 and expected_sha256 != actual:
+        return _fail_report(
+            "Reconstructed SHA-256 mismatch.",
+            expected_sha256=expected_sha256,
+            actual_sha256=actual,
+        )
+
+    return VerifyReport(
+        ok=True,
+        missing_hashes=[],
+        missing_count=0,
+        expected_sha256=expected_sha256,
+        actual_sha256=actual,
+        reason=None,
+    )
+
+
 def verify_seed(
     seed_path: str | Path,
     genome_path: str | Path,
@@ -289,74 +422,22 @@ def verify_seed(
     seed = read_seed(
         seed_path, encryption_key=encryption_key,
     )
-    missing: list[str] = []
     expected = seed.manifest.get("source_sha256")
     expected_size = seed.manifest.get("source_size")
 
     with open_genome(genome_path) as genome:
-        if require_signature and seed.signature is None:
-            return VerifyReport(
-                ok=False,
-                missing_hashes=[],
-                missing_count=0,
-                expected_sha256=expected,
-                actual_sha256=None,
-                reason="Signature is required but missing.",
-            )
-        if seed.signature is not None:
-            if signature_key is None:
-                if require_signature:
-                    return VerifyReport(
-                        ok=False,
-                        missing_hashes=[],
-                        missing_count=0,
-                        expected_sha256=expected,
-                        actual_sha256=None,
-                        reason=(
-                            "Signature key is required"
-                            " to verify signed seed."
-                        ),
-                    )
-            else:
-                ok, sig_reason = verify_signature(seed, signature_key)
-                if not ok:
-                    return VerifyReport(
-                        ok=False,
-                        missing_hashes=[],
-                        missing_count=0,
-                        expected_sha256=expected,
-                        actual_sha256=None,
-                        reason=sig_reason,
-                    )
+        sig_result = _verify_signature_phase(
+            seed, require_signature,
+            signature_key, expected,
+        )
+        if sig_result is not None:
+            return sig_result
 
-        for op in seed.recipe.ops:
-            if op.hash_index >= len(seed.recipe.hash_table):
-                return VerifyReport(
-                    ok=False,
-                    missing_hashes=[],
-                    missing_count=0,
-                    expected_sha256=expected,
-                    actual_sha256=None,
-                    reason="Recipe index out of bounds.",
-                )
-            digest = seed.recipe.hash_table[op.hash_index]
-            has_genome = genome.has_chunk(digest)
-            has_raw = op.hash_index in seed.raw_payloads
-            if op.opcode == OP_REF and not (has_genome or has_raw):
-                missing.append(digest.hex())
-            if op.opcode == OP_RAW and not (has_raw or has_genome):
-                missing.append(digest.hex())
-
-        if missing:
-            unique_missing = sorted(set(missing))
-            return VerifyReport(
-                ok=False,
-                missing_hashes=unique_missing,
-                missing_count=len(unique_missing),
-                expected_sha256=expected,
-                actual_sha256=None,
-                reason="Missing required chunks.",
-            )
+        chunk_result = _check_chunk_availability(
+            seed, genome, expected,
+        )
+        if chunk_result is not None:
+            return chunk_result
 
         if not strict:
             return VerifyReport(
@@ -368,53 +449,8 @@ def verify_seed(
                 reason=None,
             )
 
-        h = hashlib.sha256()
-        actual_size = 0
-        for op in seed.recipe.ops:
-            chunk = _resolve_chunk(
-                op,
-                seed.recipe.hash_table,
-                seed.raw_payloads,
-                genome,
-            )
-            h.update(chunk)
-            actual_size += len(chunk)
-
-        size_mismatch = (
-            isinstance(expected_size, int)
-            and expected_size != actual_size
-        )
-        if size_mismatch:
-            return VerifyReport(
-                ok=False,
-                missing_hashes=[],
-                missing_count=0,
-                expected_sha256=expected,
-                actual_sha256=None,
-                reason=(
-                    "Reconstructed size mismatch: "
-                    f"expected {expected_size}, got {actual_size}."
-                ),
-            )
-
-        actual = h.hexdigest()
-        if expected and expected != actual:
-            return VerifyReport(
-                ok=False,
-                missing_hashes=[],
-                missing_count=0,
-                expected_sha256=expected,
-                actual_sha256=actual,
-                reason="Reconstructed SHA-256 mismatch.",
-            )
-
-        return VerifyReport(
-            ok=True,
-            missing_hashes=[],
-            missing_count=0,
-            expected_sha256=expected,
-            actual_sha256=actual,
-            reason=None,
+        return _strict_reconstruct(
+            seed, genome, expected_size, expected,
         )
 
 
