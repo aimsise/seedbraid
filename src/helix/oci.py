@@ -35,6 +35,21 @@ def build_oras_annotations(
     *,
     encryption_key: str | None = None,
 ) -> dict[str, str]:
+    """Build OCI annotation dict from a seed file.
+
+    Extracts source SHA-256, chunker name, manifest
+    privacy flag, and title from the seed manifest.
+
+    Args:
+        seed_path: Path to the ``.hlx`` seed file.
+        encryption_key: Passphrase to decrypt the
+            seed if encrypted.  ``None`` for
+            unencrypted seeds.
+
+    Returns:
+        Dict mapping OCI annotation keys to string
+        values.
+    """
     seed = read_seed(seed_path, encryption_key=encryption_key)
     manifest = seed.manifest
 
@@ -64,6 +79,29 @@ def push_seed_oras(
     media_type: str = HELIX_OCI_SEED_MEDIA_TYPE,
     encryption_key: str | None = None,
 ) -> dict[str, str]:
+    """Push a seed to an OCI registry via ORAS CLI.
+
+    Attaches OCI annotations derived from the seed
+    manifest.
+
+    Args:
+        seed_path: Path to the ``.hlx`` seed file.
+        reference: OCI reference in the format
+            ``<registry>/<repo>:<tag>``.
+        artifact_type: OCI artifact type string.
+        media_type: Media type for the seed layer.
+        encryption_key: Passphrase to decrypt the
+            seed for annotation extraction.
+
+    Returns:
+        Dict of OCI annotations attached to the
+        pushed artifact.
+
+    Raises:
+        ExternalToolError: If the ``oras`` CLI is
+            missing, the seed file does not exist,
+            or the push fails.
+    """
     seed_path = Path(seed_path)
     if not seed_path.exists():
         raise ExternalToolError(
@@ -109,6 +147,27 @@ def push_seed_oras(
 
 
 def pull_seed_oras(reference: str, out_path: str | Path) -> Path:
+    """Pull a seed from an OCI registry via ORAS CLI.
+
+    Downloads the artifact into a temporary directory,
+    verifies that exactly one ``.hlx`` file is
+    present, and copies it to ``out_path``.
+
+    Args:
+        reference: OCI reference in the format
+            ``<registry>/<repo>:<tag>``.
+        out_path: Destination file path for the
+            pulled seed.
+
+    Returns:
+        The ``out_path`` as a ``Path`` object.
+
+    Raises:
+        ExternalToolError: If the ``oras`` CLI is
+            missing, the pull fails, or the artifact
+            does not contain exactly one ``.hlx``
+            file.
+    """
     out_path = Path(out_path)
     oras = _require_oras_cli()
 

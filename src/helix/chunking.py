@@ -41,6 +41,23 @@ def _rotl64(value: int, shift: int) -> int:
 
 
 def iter_fixed_chunks(stream: BinaryIO, chunk_size: int) -> Iterator[bytes]:
+    """Yield fixed-size chunks from a binary stream.
+
+    Reads ``chunk_size`` bytes at a time until the
+    stream is exhausted.  The final chunk may be
+    shorter than ``chunk_size``.
+
+    Args:
+        stream: Readable binary stream to chunk.
+        chunk_size: Byte size of each chunk.
+
+    Yields:
+        Consecutive byte chunks from the stream.
+
+    Raises:
+        ValueError: If ``chunk_size`` is not
+            positive.
+    """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be > 0")
     while True:
@@ -65,6 +82,21 @@ def _buzhash_table() -> list[int]:
 
 
 def iter_cdc_buzhash(stream: BinaryIO, cfg: ChunkerConfig) -> Iterator[bytes]:
+    """Yield content-defined chunks using BuzHash.
+
+    Chunk boundaries are determined by a BuzHash
+    rolling hash over a sliding window.  Output is
+    deterministic for identical input and parameters.
+
+    Args:
+        stream: Readable binary stream to chunk.
+        cfg: Chunker parameters controlling min, avg,
+            max chunk sizes, and window size.
+
+    Yields:
+        Variable-size byte chunks whose boundaries
+        are anchored on rolling hash fingerprints.
+    """
     table = _buzhash_table()
     window = [0] * cfg.window_size
     window_fill = 0
@@ -97,6 +129,22 @@ def iter_cdc_buzhash(stream: BinaryIO, cfg: ChunkerConfig) -> Iterator[bytes]:
 
 
 def iter_cdc_rabin(stream: BinaryIO, cfg: ChunkerConfig) -> Iterator[bytes]:
+    """Yield content-defined chunks using Rabin fingerprinting.
+
+    Uses a polynomial rolling hash (base 257) instead
+    of BuzHash.  Produces different boundaries than
+    ``iter_cdc_buzhash`` but follows the same
+    min/avg/max size constraints.
+
+    Args:
+        stream: Readable binary stream to chunk.
+        cfg: Chunker parameters controlling min, avg,
+            max chunk sizes, and window size.
+
+    Yields:
+        Variable-size byte chunks whose boundaries
+        are anchored on Rabin fingerprints.
+    """
     base = 257
     window = [0] * cfg.window_size
     window_fill = 0
@@ -133,6 +181,24 @@ def iter_cdc_rabin(stream: BinaryIO, cfg: ChunkerConfig) -> Iterator[bytes]:
 def iter_chunks(
     stream: BinaryIO, chunker: str, cfg: ChunkerConfig,
 ) -> Iterator[bytes]:
+    """Dispatch to the named chunking algorithm.
+
+    Args:
+        stream: Readable binary stream to chunk.
+        chunker: Algorithm name.  One of ``"fixed"``,
+            ``"cdc_buzhash"``, ``"cdc_rabin"``.
+        cfg: Chunker parameters.  For ``"fixed"``
+            mode only ``avg_size`` is used as the
+            chunk size.
+
+    Yields:
+        Byte chunks produced by the selected
+        algorithm.
+
+    Raises:
+        ValueError: If ``chunker`` is not a
+            recognised algorithm name.
+    """
     if chunker == "fixed":
         yield from iter_fixed_chunks(stream, cfg.avg_size)
         return

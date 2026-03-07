@@ -210,6 +210,23 @@ def _check_compression() -> list[DoctorCheck]:
 
 
 def run_doctor(genome_path: str | Path) -> DoctorReport:
+    """Run environment and dependency diagnostics.
+
+    Checks Python version, IPFS CLI availability,
+    IPFS_PATH configuration, genome path writability,
+    and compression library status.
+
+    Args:
+        genome_path: Path to the genome directory or
+            database file to check for writability.
+
+    Returns:
+        Report containing individual check results.
+
+    Raises:
+        ExternalToolError: If an unexpected error
+            occurs during diagnostics.
+    """
     path = Path(genome_path)
     checks: list[DoctorCheck] = []
     try:
