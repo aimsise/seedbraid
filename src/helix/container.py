@@ -104,7 +104,7 @@ def _compress(data: bytes, name: str) -> bytes:
                 " dependency 'zstandard'.",
                 next_action=ACTION_INSTALL_ZSTD,
             ) from exc
-        return bytes(zstd.ZstdCompressor(level=3).compress(data))
+        return zstd.ZstdCompressor(level=3).compress(data)  # type: ignore[no-any-return]
     raise SeedFormatError(
         f"Unsupported compression: {name}",
         next_action=ACTION_CHECK_OPTIONS,
@@ -125,7 +125,7 @@ def _decompress(data: bytes, ctype: int) -> bytes:
                 " 'zstandard' is not installed.",
                 next_action=ACTION_INSTALL_ZSTD,
             ) from exc
-        return bytes(zstd.ZstdDecompressor().decompress(data))
+        return zstd.ZstdDecompressor().decompress(data)  # type: ignore[no-any-return]
     raise SeedFormatError(
         f"Unknown manifest compression id: {ctype}",
         next_action=ACTION_REGENERATE_SEED,
