@@ -75,7 +75,7 @@ Initial OSS public release.
 - CI benchmark gates for dedup ratio and throughput
 - Compatibility fixture regression coverage
 
-[Unreleased]: https://github.com/kytk-03/seedbraid/compare/v1.0.0b2...HEAD
-[1.0.0b2]: https://github.com/kytk-03/seedbraid/compare/v1.0.0b1...v1.0.0b2
-[1.0.0b1]: https://github.com/kytk-03/seedbraid/compare/v1.0.0...v1.0.0b1
-[1.0.0]: https://github.com/kytk-03/seedbraid/releases/tag/v1.0.0
+[Unreleased]: https://github.com/aimsise/seedbraid/compare/v1.0.0b2...HEAD
+[1.0.0b2]: https://github.com/aimsise/seedbraid/compare/v1.0.0b1...v1.0.0b2
+[1.0.0b1]: https://github.com/aimsise/seedbraid/compare/v1.0.0...v1.0.0b1
+[1.0.0]: https://github.com/aimsise/seedbraid/releases/tag/v1.0.0

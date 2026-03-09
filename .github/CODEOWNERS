@@ -6,13 +6,13 @@
 # automatically requested for review.
 #
 # NOTE: When the project gains multiple contributors, replace individual
-# usernames with GitHub teams (e.g., @kytk-03/maintainers,
-# @kytk-03/security-reviewers, @kytk-03/devops, @kytk-03/qa).
+# usernames with GitHub teams (e.g., @aimsise/maintainers,
+# @aimsise/security-reviewers, @aimsise/devops, @aimsise/qa).
 
 # ============================================================================
 # Default: all files require maintainer review
 # ============================================================================
-*                                @kytk-03
+*                                @aimsise
 
 # ============================================================================
 # Security-Critical Paths
@@ -20,41 +20,41 @@
 # data integrity verification, and network transport. Changes require
 # security-focused review.
 # ============================================================================
-src/seedbraid/container.py           @kytk-03
-src/seedbraid/codec.py               @kytk-03
-src/seedbraid/ipfs.py                @kytk-03
-src/seedbraid/storage.py             @kytk-03
-src/seedbraid/pinning.py             @kytk-03
-src/seedbraid/errors.py              @kytk-03
+src/seedbraid/container.py           @aimsise
+src/seedbraid/codec.py               @aimsise
+src/seedbraid/ipfs.py                @aimsise
+src/seedbraid/storage.py             @aimsise
+src/seedbraid/pinning.py             @aimsise
+src/seedbraid/errors.py              @aimsise
 
 # ============================================================================
 # Specification & Security Documentation
 # Format/design changes require both architecture and security sign-off.
 # ============================================================================
-docs/FORMAT.md                   @kytk-03
-docs/THREAT_MODEL.md             @kytk-03
-SECURITY.md                      @kytk-03
+docs/FORMAT.md                   @aimsise
+docs/THREAT_MODEL.md             @aimsise
+SECURITY.md                      @aimsise
 
 # ============================================================================
 # CI / DevOps
 # Workflow, build, and infrastructure changes require DevOps review.
 # ============================================================================
-.github/                         @kytk-03
-scripts/                         @kytk-03
-pyproject.toml                   @kytk-03
+.github/                         @aimsise
+scripts/                         @aimsise
+pyproject.toml                   @aimsise
 
 # ============================================================================
 # Test Suite
 # Security-critical tests require security reviewer.
 # ============================================================================
-tests/test_signature.py          @kytk-03
-tests/test_encryption.py         @kytk-03
-tests/test_container.py          @kytk-03
-tests/                           @kytk-03
+tests/test_signature.py          @aimsise
+tests/test_encryption.py         @aimsise
+tests/test_container.py          @aimsise
+tests/                           @aimsise
 
 # ============================================================================
 # Governance Documentation
 # ============================================================================
-CONTRIBUTING.md                  @kytk-03
-CODE_OF_CONDUCT.md               @kytk-03
-README.md                        @kytk-03
+CONTRIBUTING.md                  @aimsise
+CODE_OF_CONDUCT.md               @aimsise
+README.md                        @aimsise
