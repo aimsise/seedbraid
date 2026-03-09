@@ -890,6 +890,12 @@ def serialize_seed(
 
 
 def _parse_sbd1_header(data: bytes) -> int:
+    """Parse the 8-byte SBD1 header and return the
+    section count.
+
+    Raises:
+        SeedFormatError: On invalid magic or version.
+    """
     if len(data) < 8:
         raise SeedFormatError(
             "Seed file too short.",
@@ -914,6 +920,15 @@ def _parse_sbd1_header(data: bytes) -> int:
 def _scan_sbd1_sections(
     data: bytes, section_count: int,
 ) -> tuple[dict[int, bytes], dict[int, int]]:
+    """Scan TLV sections from raw seed data.
+
+    Returns (payloads, section_starts) mapping section
+    type IDs to their payload bytes and byte offsets.
+
+    Args:
+        data: Raw seed bytes.
+        section_count: Number of sections from header.
+    """
     offset = 8
     payloads: dict[int, bytes] = {}
     section_starts: dict[int, int] = {}
@@ -951,6 +966,13 @@ def _scan_sbd1_sections(
 def _check_required_sections(
     payloads: dict[int, bytes],
 ) -> None:
+    """Verify that manifest, recipe, and integrity
+    sections are all present.
+
+    Raises:
+        SeedFormatError: If any required section is
+            missing.
+    """
     if (
         SECTION_MANIFEST not in payloads
         or SECTION_RECIPE not in payloads
@@ -967,6 +989,18 @@ def _verify_sbd1_integrity(
     payloads: dict[int, bytes],
     section_starts: dict[int, int],
 ) -> None:
+    """Verify CRC32 and SHA-256 checksums in the
+    integrity section against actual section payloads.
+
+    Args:
+        data: Raw seed bytes.
+        payloads: Section type to payload mapping.
+        section_starts: Section type to byte offset.
+
+    Raises:
+        SeedFormatError: On checksum mismatch or
+            invalid integrity data.
+    """
     integrity_payload = payloads[SECTION_INTEGRITY]
     try:
         integrity = json.loads(
@@ -1058,6 +1092,14 @@ def _verify_sbd1_integrity(
 def _decode_manifest_payload(
     payload: bytes,
 ) -> tuple[dict[str, Any], str]:
+    """Decompress and decode the manifest payload.
+
+    Returns (manifest_dict, compression_name).
+
+    Raises:
+        SeedFormatError: On decompression or JSON
+            decode failure.
+    """
     if not payload:
         raise SeedFormatError(
             "Manifest section empty.",
@@ -1093,6 +1135,16 @@ def _decode_signature_section(
     section_start: int | None,
     data: bytes,
 ) -> tuple[dict[str, Any] | None, bytes | None]:
+    """Decode the optional signature section.
+
+    Returns (signature_dict, signed_data) or
+    (None, None) when no signature is present.
+
+    Args:
+        payload: Raw signature section bytes.
+        section_start: Byte offset of the section.
+        data: Full raw seed bytes.
+    """
     if payload is None:
         return None, None
     try:

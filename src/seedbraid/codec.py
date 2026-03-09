@@ -65,6 +65,7 @@ class VerifyReport:
 
 
 def _sha256_bytes(data: bytes) -> bytes:
+    """Return the raw SHA-256 digest of *data*."""
     h = hashlib.sha256()
     h.update(data)
     return h.digest()
@@ -95,6 +96,13 @@ def sha256_file(path: str | Path) -> str:
 def _chunk_stream_from_file(
     path: str | Path, chunker: str, cfg: ChunkerConfig,
 ) -> Iterator[bytes]:
+    """Yield chunks from a file using the given chunker.
+
+    Args:
+        path: Path to the file to chunk.
+        chunker: Chunker algorithm name.
+        cfg: Chunker configuration parameters.
+    """
     with Path(path).open("rb") as f:
         yield from iter_chunks(f, chunker, cfg)
 
@@ -110,6 +118,19 @@ def _build_chunk_index(
     list[bytes], list[RecipeOp],
     dict[int, bytes], EncodeStats,
 ]:
+    """Chunk the input file and build the recipe index.
+
+    Returns a tuple of (hash_table, ops, raw_payloads,
+    stats) used to construct the SBD1 seed.
+
+    Args:
+        in_path: Path to the source file.
+        genome: Genome storage instance.
+        chunker: Chunker algorithm name.
+        cfg: Chunker configuration parameters.
+        learn: Whether to store new chunks in genome.
+        portable: Whether to embed raw payloads.
+    """
     hash_to_index: dict[bytes, int] = {}
     hash_table: list[bytes] = []
     ops: list[RecipeOp] = []
@@ -193,6 +214,20 @@ def _build_manifest(
     learn: bool,
     manifest_private: bool,
 ) -> dict[str, Any]:
+    """Build the manifest dictionary for an SBD1 seed.
+
+    When *manifest_private* is ``True``, source
+    metadata (size, hash, chunker params) is omitted.
+
+    Args:
+        in_path: Path to the source file.
+        chunker: Chunker algorithm name.
+        cfg: Chunker configuration parameters.
+        stats: Encode statistics from chunking.
+        portable: Whether the seed is portable.
+        learn: Whether learning was enabled.
+        manifest_private: Omit source metadata.
+    """
     if manifest_private:
         return {
             "format": "SBD1",
@@ -319,6 +354,20 @@ def _resolve_chunk(
     raw_payloads: dict[int, bytes],
     genome: GenomeStorage,
 ) -> bytes:
+    """Resolve a single recipe op to its chunk data.
+
+    Looks up the chunk from raw payloads or genome
+    depending on the opcode.
+
+    Args:
+        op: Recipe operation to resolve.
+        hash_table: Ordered list of chunk digests.
+        raw_payloads: Embedded raw chunk data by index.
+        genome: Genome storage instance.
+
+    Raises:
+        DecodeError: If the chunk cannot be found.
+    """
     if op.hash_index >= len(hash_table):
         raise DecodeError(
             "Recipe refers to hash index out of bounds.",
@@ -415,6 +464,7 @@ def _fail_report(
     expected_sha256: str | None = None,
     actual_sha256: str | None = None,
 ) -> VerifyReport:
+    """Create a failed ``VerifyReport`` with the given reason."""
     return VerifyReport(
         ok=False,
         missing_hashes=[],
@@ -431,6 +481,17 @@ def _verify_signature_phase(
     signature_key: str | None,
     expected_sha256: str | None,
 ) -> VerifyReport | None:
+    """Verify the seed signature if present.
+
+    Returns a failed ``VerifyReport`` when signature
+    validation fails, or ``None`` on success.
+
+    Args:
+        seed: Parsed seed object.
+        require_signature: Fail if no signature.
+        signature_key: HMAC key for verification.
+        expected_sha256: Expected source hash.
+    """
     if require_signature and seed.signature is None:
         return _fail_report(
             "Signature is required but missing.",
@@ -461,6 +522,17 @@ def _check_chunk_availability(
     genome: GenomeStorage,
     expected_sha256: str | None,
 ) -> VerifyReport | None:
+    """Check that all chunks referenced by the recipe
+    are available in raw payloads or the genome.
+
+    Returns a failed ``VerifyReport`` listing missing
+    hashes, or ``None`` when all chunks are present.
+
+    Args:
+        seed: Parsed seed object.
+        genome: Genome storage instance.
+        expected_sha256: Expected source hash.
+    """
     missing: list[str] = []
     ht_len = len(seed.recipe.hash_table)
     for op in seed.recipe.ops:
@@ -493,6 +565,15 @@ def _strict_reconstruct(
     expected_size: int | None,
     expected_sha256: str | None,
 ) -> VerifyReport:
+    """Reconstruct the file in memory and verify its
+    size and SHA-256 against the manifest.
+
+    Args:
+        seed: Parsed seed object.
+        genome: Genome storage instance.
+        expected_size: Expected file size from manifest.
+        expected_sha256: Expected source hash.
+    """
     h = hashlib.sha256()
     actual_size = 0
     for op in seed.recipe.ops:
@@ -607,6 +688,12 @@ def verify_seed(
 def _expand_input_paths(
     dir_or_glob: str | Path,
 ) -> list[Path]:
+    """Expand a directory or glob pattern to file paths.
+
+    Args:
+        dir_or_glob: Directory (recursively scanned)
+            or glob pattern.
+    """
     p = Path(dir_or_glob)
     if p.is_dir():
         return [
