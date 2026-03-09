@@ -5,7 +5,7 @@
 # valid funding account.  For "github:" entries the account must be
 # enrolled in GitHub Sponsors.
 
-github: [kytk-03]
-# open_collective: kytk-03
-# ko_fi: kytk-03
-# custom: ["https://kytk-03.example.com/sponsor"]
+github: [aimsise]
+# open_collective: aimsise
+# ko_fi: aimsise
+# custom: ["https://aimsise.example.com/sponsor"]

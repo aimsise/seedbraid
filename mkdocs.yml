@@ -2,8 +2,8 @@ site_name: Seedbraid
 site_description: >-
   Reference-based file reconstruction with CDC chunking,
   SBD1 binary seed format, and IPFS transport.
-repo_url: https://github.com/kytk-03/seedbraid
-repo_name: kytk-03/seedbraid
+repo_url: https://github.com/aimsise/seedbraid
+repo_name: aimsise/seedbraid
 
 theme:
   name: material
