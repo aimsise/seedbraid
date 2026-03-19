@@ -26,6 +26,16 @@ This document defines operator-facing error codes emitted by the Seedbraid CLI.
   - `ipfs cat`/gateway fetch failed after retries.
 - `SB_E_IPFS_PIN_STATUS`
   - Pin status query failed unexpectedly.
+- `SB_E_IPFS_CHUNK_PUT`
+  - `ipfs block put --cid-codec raw` chunk publish operation failed.
+- `SB_E_IPFS_CHUNK_GET`
+  - `ipfs block get` chunk fetch operation failed after retries.
+- `SB_E_IPFS_CHUNK_UNAVAILABLE`
+  - Requested chunk is not available on the IPFS network (not found or
+    all retries exhausted).
+- `SB_E_CHUNK_MANIFEST_FORMAT`
+  - Chunk manifest sidecar (`.sbd.chunks.json`) has invalid format,
+    unknown version, or missing required fields.
 - `SB_E_REMOTE_PIN_CONFIG`
   - Remote pin request is missing required provider config (endpoint/token).
 - `SB_E_REMOTE_PIN_AUTH`

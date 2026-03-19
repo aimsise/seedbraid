@@ -136,6 +136,29 @@ Migration policy:
   seed is prepared with `--manifest-private` and access controls are appropriate.
 - Out of scope remains managed production inference/deployment automation.
 
+## IPFS Distributed Chunk Storage (SBD-ECO-006)
+- Publish individual CDC chunks to IPFS as raw blocks via `ipfs block put
+  --cid-codec raw`; reconstruct files by parallel-fetching chunks from IPFS.
+- CIDv1 (raw codec, base32-lower) is computed deterministically from
+  SHA-256 digest using stdlib only (`hashlib`, `base64`).
+- Chunk CID metadata is stored in a JSON sidecar (`.sbd.chunks.json`);
+  SBD1/SBE1 wire format is unchanged.
+- `IPFSChunkStorage` implements the `GenomeStorage` Protocol backed by
+  `ipfs block put/get/stat` subprocess calls with retry and exponential
+  backoff.
+- Parallel publish uses `ThreadPoolExecutor` (default 16 workers);
+  parallel fetch is batched (default `batch_size=100`) to respect the
+  streaming-first memory model.
+- `HybridGenomeStorage` combines local SQLiteGenome with IPFS fallback,
+  optionally caching IPFS-fetched chunks locally.
+- CLI commands: `seedbraid publish-chunks` publishes all chunks referenced
+  by a seed; `seedbraid fetch-decode` reconstructs the original file from
+  IPFS.
+- Chunk DAG pinning via IPFS MFS allows pinning all chunks via a single
+  DAG root CID using existing PSA remote pin infrastructure.
+- Out of scope for this iteration: asyncio fetch, chunk-level encryption,
+  IPFS HTTP API direct calls (subprocess baseline maintained).
+
 ## Assumptions
 - `ipfs` CLI installed/configured when publish/fetch is used.
 - Genome path points to writable location.
