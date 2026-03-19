@@ -136,3 +136,11 @@ ACTION_REGENERATE_MANIFEST = (
     "Regenerate manifest with"
     " `seedbraid publish-chunks`."
 )
+ACTION_CHECK_IPFS_DAEMON = (
+    "Ensure IPFS daemon is running"
+    " and retry."
+)
+ACTION_CHECK_IPFS_NETWORK = (
+    "Check IPFS network connectivity"
+    " or provide --gateway for fallback."
+)
