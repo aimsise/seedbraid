@@ -149,13 +149,22 @@ Migration policy:
 - Parallel publish uses `ThreadPoolExecutor` (default 16 workers);
   parallel fetch is batched (default `batch_size=100`) to respect the
   streaming-first memory model.
-- `HybridGenomeStorage` combines local SQLiteGenome with IPFS fallback,
-  optionally caching IPFS-fetched chunks locally.
+- `HybridGenomeStorage` combines local `SQLiteGenome` with IPFS
+  fallback; `cache_fetched` defaults to `True`, storing
+  remotely-fetched chunks into the local genome for subsequent reads.
+- `seedbraid decode --genome ipfs://` activates `HybridGenomeStorage`
+  automatically.  `ipfs://` alone uses a temporary cache (discarded
+  after decode); `ipfs:///path/to/cache` persists fetched chunks to
+  the specified directory for future reuse.
 - CLI commands: `seedbraid publish-chunks` publishes all chunks referenced
   by a seed; `seedbraid fetch-decode` reconstructs the original file from
   IPFS.
-- Chunk DAG pinning via IPFS MFS allows pinning all chunks via a single
-  DAG root CID using existing PSA remote pin infrastructure.
+- Chunk DAG pinning via IPFS MFS: `create_chunk_dag` builds a
+  temporary MFS directory (`/seedbraid-chunks-<timestamp>`),
+  copies all chunk CIDs into it, retrieves the directory root CID
+  via `ipfs files stat --hash`, and removes the MFS entry in a
+  `finally` block.  The DAG remains in the IPFS object store,
+  pinnable via local `ipfs pin add` or remote PSA pin.
 - Out of scope for this iteration: asyncio fetch, chunk-level encryption,
   IPFS HTTP API direct calls (subprocess baseline maintained).
 
