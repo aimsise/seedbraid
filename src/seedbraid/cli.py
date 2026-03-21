@@ -21,6 +21,7 @@ from .chunk_manifest import (
 from .chunking import ChunkerConfig
 from .codec import (
     decode_file,
+    decode_file_with_genome,
     encode_file,
     export_genes,
     import_genes,
@@ -169,28 +170,90 @@ def encode(
         raise typer.Exit(code=_print_error(exc))
 
 
+_IPFS_SCHEME = "ipfs://"
+
+
+def _decode_with_ipfs_genome(
+    seed: Path,
+    genome_uri: str,
+    out: Path,
+    *,
+    encryption_key: str | None = None,
+    gateway: str | None = None,
+) -> str:
+    """Decode using HybridGenomeStorage via ipfs:// URI.
+
+    ``ipfs://`` uses a temporary cache (discarded).
+    ``ipfs:///path/to/cache`` persists the cache.
+    """
+    import contextlib
+    import tempfile
+
+    from .hybrid_storage import HybridGenomeStorage
+    from .ipfs_chunks import IPFSChunkStorage
+    from .storage import SQLiteGenome
+
+    cache_path_str = genome_uri[len(_IPFS_SCHEME):]
+    persist = bool(cache_path_str)
+
+    if persist:
+        cache_dir = contextlib.nullcontext(
+            cache_path_str,
+        )
+    else:
+        cache_dir = tempfile.TemporaryDirectory()
+
+    with cache_dir as dir_path:
+        db = Path(dir_path) / "genome.sqlite"
+        local = SQLiteGenome(db)
+        ipfs = IPFSChunkStorage(gateway=gateway)
+        with HybridGenomeStorage(
+            local, ipfs,
+            cache_fetched=persist,
+        ) as hybrid:
+            return decode_file_with_genome(
+                seed, hybrid, out,
+                encryption_key=encryption_key,
+            )
+
+
 @app.command()
 def decode(
     seed: Path,
-    genome: Path = typer.Option(..., "--genome"),
+    genome: str = typer.Option(..., "--genome"),
     out: Path = typer.Option(..., "--out"),
     encryption_key: str | None = typer.Option(
         None,
         "--encryption-key",
         help="Passphrase for encrypted SBE1 seed input.",
     ),
+    gateway: str | None = typer.Option(
+        None,
+        "--gateway",
+        help=(
+            "HTTP gateway fallback URL for"
+            " ipfs:// genome mode"
+            " (e.g. https://ipfs.io/ipfs)."
+        ),
+    ),
 ) -> None:
     """Decode a seed into original file."""
     try:
-        digest = decode_file(
-            seed,
-            genome,
-            out,
-            encryption_key=(
-                encryption_key
-                or os.environ.get("SB_ENCRYPTION_KEY")
-            ),
+        effective_key = (
+            encryption_key
+            or os.environ.get("SB_ENCRYPTION_KEY")
         )
+        if genome.startswith(_IPFS_SCHEME):
+            digest = _decode_with_ipfs_genome(
+                seed, genome, out,
+                encryption_key=effective_key,
+                gateway=gateway,
+            )
+        else:
+            digest = decode_file(
+                seed, genome, out,
+                encryption_key=effective_key,
+            )
         typer.echo(f"decoded sha256={digest}")
     except SeedbraidError as exc:
         raise typer.Exit(code=_print_error(exc))
