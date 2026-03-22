@@ -108,13 +108,13 @@ A common Seedbraid workflow looks like this:
 5. Fetch and decode later using the genome
 6. Run strict verification when exact restore is required
 
-## Beta Status
+## Stability
 
-Seedbraid is currently in beta.
+Seedbraid v2.0.0 is production-ready.
 
-It is already useful for evaluation, benchmarking, and controlled workflows, but before production use you should validate behavior in your own runtime, storage, and network environment.
+Before deploying to your environment, validate behavior in your own runtime, storage, and network configuration.
 
-For production readiness, treat successful `verify --strict` and bit-perfect restore checks as release gates.
+Treat successful `verify --strict` and bit-perfect restore checks as release gates.
 
 ## Production Validation Checklist
 
