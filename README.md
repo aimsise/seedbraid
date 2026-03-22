@@ -361,7 +361,6 @@ If missing, install Kubo and ensure `ipfs` is available on your `PATH`.
 | Seed parse/integrity failure | `SB_E_SEED_FORMAT` | Re-fetch/rebuild seed and verify source integrity. |
 | IPFS chunk publish failed | `SB_E_IPFS_CHUNK_PUT` | Check IPFS daemon, retry, verify chunk availability. |
 | IPFS chunk fetch failed | `SB_E_IPFS_CHUNK_GET` | Check daemon/network, retry, use `--gateway` fallback. |
-| IPFS chunk not found | `SB_E_IPFS_CHUNK_UNAVAILABLE` | Re-publish chunks or use `--gateway` for alternate retrieval. |
 | Chunk manifest invalid | `SB_E_CHUNK_MANIFEST_FORMAT` | Regenerate manifest with `publish-chunks`. |
 | IPFS MFS operation failed | `SB_E_IPFS_MFS` | Verify daemon is running with `ipfs files ls /`. |
 
@@ -392,9 +391,9 @@ uv lock
 ## Local Checks
 
 ```bash
-uv run --no-editable ruff check .
-uv run --no-editable python -m pytest
-uv run --no-editable python -m pytest tests/test_compat_fixtures.py
+PYTHONPATH=src uv run --no-editable ruff check .
+PYTHONPATH=src uv run --no-editable python -m pytest
+PYTHONPATH=src uv run --no-editable python -m pytest tests/test_compat_fixtures.py
 ```
 
 IPFS tests auto-skip when `ipfs` is not installed.

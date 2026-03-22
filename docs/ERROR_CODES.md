@@ -33,9 +33,6 @@ This document defines operator-facing error codes emitted by the Seedbraid CLI.
 - `SB_E_IPFS_MFS`
   - IPFS MFS (Mutable File System) operation failed during DAG construction
     for chunk pinning (`ipfs files mkdir/cp/stat/rm`).
-- `SB_E_IPFS_CHUNK_UNAVAILABLE`
-  - Requested chunk is not available on the IPFS network (not found or
-    all retries exhausted).
 - `SB_E_CHUNK_MANIFEST_FORMAT`
   - Chunk manifest sidecar (`.sbd.chunks.json`) has invalid format,
     unknown version, or missing required fields.

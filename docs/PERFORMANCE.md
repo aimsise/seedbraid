@@ -56,8 +56,8 @@ Recommended CI action:
 Notes:
 - Thresholds apply only when `ipfs` CLI is available; IPFS tests and
   benchmarks are auto-skipped in environments without a running daemon.
-- Benchmark integration into `scripts/bench_gate.py` is planned for
-  Phase 9 (Ticket #10).
+- Benchmark integration into `scripts/bench_gate.py` is deferred;
+  local daemon availability varies across CI environments.
 - Memory bound is derived from `batch_size=100 * avg_chunk=64KiB =
   6.4 MiB` active buffer; 100 MiB ceiling allows for process overhead
   and hash table materialization.

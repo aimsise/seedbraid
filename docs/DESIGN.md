@@ -26,6 +26,10 @@ Migration policy:
 - `codec.py`: encode/decode/verify/prime workflows and genome snapshot/restore.
 - `ipfs.py`: subprocess wrapper for `ipfs add/cat/pin`.
 - `cli.py`: Typer command surface.
+- `ipfs_chunks.py`: individual chunk publish/fetch via `ipfs block put/get`.
+- `chunk_manifest.py`: chunk CID sidecar (`.sbd.chunks.json`) management.
+- `hybrid_storage.py`: combined local SQLite + IPFS fallback storage.
+- `cid.py`: CIDv1 deterministic computation from SHA-256 digest.
 
 ## Why Binary Recipe + Manifest
 - Binary recipe reduces size and parse overhead compared to verbose textual formats.
@@ -150,8 +154,9 @@ Migration policy:
   parallel fetch is batched (default `batch_size=100`) to respect the
   streaming-first memory model.
 - `HybridGenomeStorage` combines local `SQLiteGenome` with IPFS
-  fallback; `cache_fetched` defaults to `True`, storing
-  remotely-fetched chunks into the local genome for subsequent reads.
+  fallback; `cache_fetched` defaults to `True` at API level, storing
+  remotely-fetched chunks into the local genome for subsequent reads
+  (CLI `ipfs://` bare URI overrides to `False` for temporary cache).
 - `seedbraid decode --genome ipfs://` activates `HybridGenomeStorage`
   automatically.  `ipfs://` alone uses a temporary cache (discarded
   after decode); `ipfs:///path/to/cache` persists fetched chunks to

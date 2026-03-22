@@ -17,6 +17,12 @@ Version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 - README.md: added `[crypto]` optional extra installation instructions
 - API reference: added docs for ipfs_chunks, chunk_manifest, hybrid_storage, cid modules
 - mkdocs.yml: nav updated with 4 new API reference entries
+- DESIGN.md: Architecture module list updated with 4 new modules; `cache_fetched` CLI behavior clarified
+- index.md: added IPFS distributed chunks to feature overview
+- PERFORMANCE.md: updated deferred benchmark integration note
+
+### Removed
+- `SB_E_IPFS_CHUNK_UNAVAILABLE` error code (never implemented; chunk fetch failures use `SB_E_IPFS_CHUNK_GET`)
 
 ## [1.2.0] - 2026-03-22
 
@@ -36,7 +42,6 @@ Version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 ### Added (Error Codes)
 - `SB_E_IPFS_CHUNK_PUT` for chunk publish failures
 - `SB_E_IPFS_CHUNK_GET` for chunk fetch failures
-- `SB_E_IPFS_CHUNK_UNAVAILABLE` for missing IPFS chunks
 - `SB_E_CHUNK_MANIFEST_FORMAT` for invalid manifest sidecar
 - `SB_E_IPFS_MFS` for MFS operation failures during DAG construction
 
