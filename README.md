@@ -391,7 +391,7 @@ uv lock
 ## Local Checks
 
 ```bash
-PYTHONPATH=src uv run --no-editable ruff check .
+UV_CACHE_DIR=.uv-cache uv run --no-editable ruff check .
 PYTHONPATH=src uv run --no-editable python -m pytest
 PYTHONPATH=src uv run --no-editable python -m pytest tests/test_compat_fixtures.py
 ```

@@ -5,9 +5,9 @@ Security fixes are currently provided for:
 
 | Version | Supported |
 |---|---|
-| 1.0.0b1 | Yes |
-| 1.0.0a1 | No (end of life) |
-| <1.0.0a1 | No |
+| 2.0.0 | Yes |
+| 1.1.x | Security fixes only |
+| <1.1.0 | No (end of life) |
 
 ## Reporting a Vulnerability
 If you find a security issue, do not open a public issue first.
