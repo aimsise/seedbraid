@@ -114,7 +114,7 @@ ACTION_CHECK_GENOME = (
 )
 ACTION_VERIFY_SNAPSHOT = (
     "Verify the snapshot file or regenerate"
-    " with `seedbraid genome-snapshot`."
+    " with `seedbraid genome snapshot`."
 )
 ACTION_VERIFY_GENES_PACK = (
     "Verify the genes pack file or regenerate"

@@ -30,6 +30,12 @@ Migration policy:
 - `chunk_manifest.py`: chunk CID sidecar (`.sbd.chunks.json`) management.
 - `hybrid_storage.py`: combined local SQLite + IPFS fallback storage.
 - `cid.py`: CIDv1 deterministic computation from SHA-256 digest.
+- `pinning.py`: remote pinning service integration (PSA).
+- `oci.py`: OCI/ORAS artifact distribution bridge.
+- `mlhooks.py`: MLflow and Hugging Face integration hooks.
+- `errors.py`: exception hierarchy and error codes.
+- `perf.py`: performance benchmarking and gate evaluation.
+- `diagnostics.py`: runtime diagnostics and doctor checks.
 
 ## Why Binary Recipe + Manifest
 - Binary recipe reduces size and parse overhead compared to verbose textual formats.

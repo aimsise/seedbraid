@@ -13,7 +13,7 @@ Version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 - Version bumped to 2.0.0: IPFS distributed chunk storage as major architectural expansion
 
 ### Documentation
-- CLAUDE.md: updated module list (16 modules), CLI commands (19 commands), crypto extra, ERROR_CODES.md ref
+- CLAUDE.md: updated module list (16 modules), CLI commands (17 commands), crypto extra, ERROR_CODES.md ref
 - README.md: added `[crypto]` optional extra installation instructions
 - API reference: added docs for ipfs_chunks, chunk_manifest, hybrid_storage, cid modules
 - mkdocs.yml: nav updated with 4 new API reference entries
