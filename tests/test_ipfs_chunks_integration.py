@@ -78,7 +78,8 @@ def ipfs_repo(tmp_path_factory):
     """Initialize an isolated IPFS repo.
 
     Skips the entire module when ``ipfs`` CLI is
-    not installed or ``ipfs init`` fails.
+    not installed, ``ipfs init`` fails, or the
+    kubo daemon is not reachable via HTTP API.
     """
     if shutil.which("ipfs") is None:
         pytest.skip("ipfs CLI not installed")
@@ -94,6 +95,12 @@ def ipfs_repo(tmp_path_factory):
         pytest.skip(
             "ipfs init failed:"
             f" {result.stderr.strip()}"
+        )
+    from seedbraid.ipfs_http import check_daemon
+    if not check_daemon():
+        pytest.skip(
+            "kubo daemon not reachable"
+            " via HTTP API"
         )
     return repo
 

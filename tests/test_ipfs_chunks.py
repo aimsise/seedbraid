@@ -26,23 +26,9 @@ from seedbraid.ipfs_chunks import (
 _cli_runner = CliRunner()
 
 
-@dataclass
-class _Proc:
-    returncode: int
-    stdout: bytes | str
-    stderr: bytes | str
-
-
 _CHUNK_DATA = b"hello ipfs chunk"
 _CHUNK_HASH = hashlib.sha256(_CHUNK_DATA).digest()
 _CHUNK_CID = sha256_to_cidv1_raw(_CHUNK_DATA)
-
-
-def _patch_ipfs(monkeypatch):  # noqa: ANN001, ANN202
-    monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.shutil.which",
-        lambda _: "/usr/bin/ipfs",
-    )
 
 
 # -- has_chunk -----------------------------------------------
@@ -51,14 +37,12 @@ def _patch_ipfs(monkeypatch):  # noqa: ANN001, ANN202
 def test_has_chunk_returns_true_on_stat_success(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=0,
-            stdout=b"Key: ... Size: 16\n",
-            stderr=b"",
-        ),
+        "seedbraid.ipfs_http.post_json",
+        lambda path, **params: {
+            "Key": params.get("arg", ""),
+            "Size": 16,
+        },
     )
     storage = IPFSChunkStorage()
     assert storage.has_chunk(_CHUNK_HASH) is True
@@ -67,14 +51,15 @@ def test_has_chunk_returns_true_on_stat_success(
 def test_has_chunk_returns_false_on_stat_failure(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
+    def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "block not found",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"block not found",
-        ),
+        "seedbraid.ipfs_http.post_json",
+        _fail,
     )
     storage = IPFSChunkStorage()
     assert storage.has_chunk(_CHUNK_HASH) is False
@@ -86,14 +71,9 @@ def test_has_chunk_returns_false_on_stat_failure(
 def test_get_chunk_returns_data_on_success(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=0,
-            stdout=_CHUNK_DATA,
-            stderr=b"",
-        ),
+        "seedbraid.ipfs_http.post_raw",
+        lambda path, **params: _CHUNK_DATA,
     )
     storage = IPFSChunkStorage()
     result = storage.get_chunk(_CHUNK_HASH)
@@ -103,14 +83,15 @@ def test_get_chunk_returns_data_on_success(
 def test_get_chunk_returns_none_on_failure(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
+    def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "offline",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"offline",
-        ),
+        "seedbraid.ipfs_http.post_raw",
+        _fail,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -123,27 +104,21 @@ def test_get_chunk_returns_none_on_failure(
 def test_get_chunk_retries_with_backoff(
     monkeypatch,
 ) -> None:
-    calls: list[list[str]] = []
+    calls = [0]
     sleeps: list[float] = []
 
-    def _fake_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        calls.append(cmd)
-        if len(calls) < 3:
-            return _Proc(
-                returncode=1,
-                stdout=b"",
-                stderr=b"timeout",
+    def _fake_post_raw(path, **params):  # noqa: ANN001, ANN003, ANN202
+        calls[0] += 1
+        if calls[0] < 3:
+            raise ExternalToolError(
+                "timeout",
+                code="SB_E_KUBO_API_ERROR",
             )
-        return _Proc(
-            returncode=0,
-            stdout=_CHUNK_DATA,
-            stderr=b"",
-        )
+        return _CHUNK_DATA
 
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _fake_run,
+        "seedbraid.ipfs_http.post_raw",
+        _fake_post_raw,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -182,14 +157,15 @@ def test_get_chunk_gateway_fallback(
         urls.append(url)
         return _Resp(_CHUNK_DATA)
 
-    _patch_ipfs(monkeypatch)
+    def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "offline",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"offline",
-        ),
+        "seedbraid.ipfs_http.post_raw",
+        _fail,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.urllib.request.urlopen",
@@ -218,14 +194,11 @@ def test_get_chunk_gateway_fallback(
 def test_put_chunk_success_with_cid_verification(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=0,
-            stdout=_CHUNK_CID.encode() + b"\n",
-            stderr=b"",
-        ),
+        "seedbraid.ipfs_http.post_multipart_json",
+        lambda path, field, data, **params: {
+            "Key": _CHUNK_CID,
+        },
     )
     storage = IPFSChunkStorage()
     result = storage.put_chunk(
@@ -238,14 +211,11 @@ def test_put_chunk_success_with_cid_verification(
 def test_put_chunk_cid_mismatch_raises(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=0,
-            stdout=b"bafkreiwrong\n",
-            stderr=b"",
-        ),
+        "seedbraid.ipfs_http.post_multipart_json",
+        lambda path, field, data, **params: {
+            "Key": "bafkreiwrong",
+        },
     )
     storage = IPFSChunkStorage()
     with pytest.raises(
@@ -261,26 +231,20 @@ def test_put_chunk_cid_mismatch_raises(
 def test_put_chunk_retries_on_failure(
     monkeypatch,
 ) -> None:
-    calls: list[list[str]] = []
+    calls = [0]
 
-    def _fake_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        calls.append(cmd)
-        if len(calls) == 1:
-            return _Proc(
-                returncode=1,
-                stdout=b"",
-                stderr=b"daemon offline",
+    def _fake_put(path, field, data, **params):  # noqa: ANN001, ANN003, ANN202
+        calls[0] += 1
+        if calls[0] == 1:
+            raise ExternalToolError(
+                "daemon offline",
+                code="SB_E_KUBO_API_ERROR",
             )
-        return _Proc(
-            returncode=0,
-            stdout=_CHUNK_CID.encode() + b"\n",
-            stderr=b"",
-        )
+        return {"Key": _CHUNK_CID}
 
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _fake_run,
+        "seedbraid.ipfs_http.post_multipart_json",
+        _fake_put,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -291,20 +255,21 @@ def test_put_chunk_retries_on_failure(
     assert storage.put_chunk(
         _CHUNK_HASH, _CHUNK_DATA,
     ) is True
-    assert len(calls) == 2
+    assert calls[0] == 2
 
 
 def test_put_chunk_all_retries_exhausted_raises(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
+    def _always_fail(path, field, data, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "daemon offline",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"daemon offline",
-        ),
+        "seedbraid.ipfs_http.post_multipart_json",
+        _always_fail,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -326,7 +291,6 @@ def test_put_chunk_all_retries_exhausted_raises(
 
 
 def test_context_manager(monkeypatch) -> None:
-    _patch_ipfs(monkeypatch)
     with IPFSChunkStorage() as storage:
         assert storage is not None
 
@@ -334,14 +298,11 @@ def test_context_manager(monkeypatch) -> None:
 def test_count_chunks_increments(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=0,
-            stdout=_CHUNK_CID.encode() + b"\n",
-            stderr=b"",
-        ),
+        "seedbraid.ipfs_http.post_multipart_json",
+        lambda path, field, data, **params: {
+            "Key": _CHUNK_CID,
+        },
     )
     storage = IPFSChunkStorage()
     assert storage.count_chunks() == 0
@@ -357,14 +318,11 @@ def test_count_chunks_increments(
 def test_publish_chunk_standalone(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=0,
-            stdout=_CHUNK_CID.encode() + b"\n",
-            stderr=b"",
-        ),
+        "seedbraid.ipfs_http.post_multipart_json",
+        lambda path, field, data, **params: {
+            "Key": _CHUNK_CID,
+        },
     )
     cid = publish_chunk(_CHUNK_DATA)
     assert cid == _CHUNK_CID
@@ -373,14 +331,15 @@ def test_publish_chunk_standalone(
 def test_fetch_chunk_standalone_raises_on_unavailable(
     monkeypatch,
 ) -> None:
-    _patch_ipfs(monkeypatch)
+    def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "not found",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"not found",
-        ),
+        "seedbraid.ipfs_http.post_raw",
+        _fail,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -396,25 +355,25 @@ def test_fetch_chunk_standalone_raises_on_unavailable(
     )
 
 
-# -- error: ipfs not found ----------------------------------
+# -- error: kubo API unreachable ----------------------------
 
 
-def test_ipfs_not_found_raises(
+def test_kubo_api_unreachable_returns_false(
     monkeypatch,
 ) -> None:
+    """has_chunk returns False when kubo API is unreachable."""
+    def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "Cannot reach kubo API",
+            code="SB_E_KUBO_API_UNREACHABLE",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.shutil.which",
-        lambda _: None,
+        "seedbraid.ipfs_http.post_json",
+        _fail,
     )
     storage = IPFSChunkStorage()
-    with pytest.raises(
-        ExternalToolError,
-        match="ipfs CLI not found",
-    ) as exc_info:
-        storage.has_chunk(_CHUNK_HASH)
-    assert exc_info.value.code == (
-        "SB_E_IPFS_NOT_FOUND"
-    )
+    assert storage.has_chunk(_CHUNK_HASH) is False
 
 
 # -- publish_chunks_from_genome helpers ----------------------
@@ -506,8 +465,7 @@ def _patch_publish_deps(
     monkeypatch,
     digests: list[bytes],
 ):  # noqa: ANN001, ANN202
-    """Patch read_seed, sha256_file, subprocess, time."""
-    _patch_ipfs(monkeypatch)
+    """Patch read_seed, sha256_file, ipfs_http, time."""
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.read_seed",
         lambda path, **kw: _make_seed(digests),
@@ -517,18 +475,13 @@ def _patch_publish_deps(
         lambda path: _SEED_SHA,
     )
 
-    def _fake_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        data = kw.get("input", b"")
+    def _fake_put(path, field, data, **params):  # noqa: ANN001, ANN003, ANN202
         cid = sha256_to_cidv1_raw(data)
-        return _Proc(
-            returncode=0,
-            stdout=cid.encode() + b"\n",
-            stderr=b"",
-        )
+        return {"Key": cid}
 
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _fake_run,
+        "seedbraid.ipfs_http.post_multipart_json",
+        _fake_put,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -578,19 +531,14 @@ def test_publish_chunks_from_genome_dedup(
         [_DIGEST_A, _DIGEST_A, _DIGEST_A],
     )
 
-    def _tracking_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        data = kw.get("input", b"")
+    def _tracking_put(path, field, data, **params):  # noqa: ANN001, ANN003, ANN202
         put_calls.append(data)
         cid = sha256_to_cidv1_raw(data)
-        return _Proc(
-            returncode=0,
-            stdout=cid.encode() + b"\n",
-            stderr=b"",
-        )
+        return {"Key": cid}
 
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _tracking_run,
+        "seedbraid.ipfs_http.post_multipart_json",
+        _tracking_put,
     )
 
     manifest = publish_chunks_from_genome(
@@ -679,13 +627,16 @@ def test_publish_chunks_ipfs_error_propagates(
         monkeypatch, [_DIGEST_A],
     )
 
+    def _always_fail(path, field, data, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "daemon offline",
+            code="SB_E_IPFS_CHUNK_PUT",
+            next_action="check ipfs",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"daemon offline",
-        ),
+        "seedbraid.ipfs_http.post_multipart_json",
+        _always_fail,
     )
 
     with pytest.raises(
@@ -850,8 +801,6 @@ def _patch_fetch_deps(
     chunks: dict[bytes, bytes],
 ):  # noqa: ANN001, ANN202
     """Patch deps for parallel fetch tests."""
-    _patch_ipfs(monkeypatch)
-
     cid_to_data: dict[str, bytes] = {}
     for digest, data in chunks.items():
         cid = sha256_to_cidv1_raw(
@@ -859,29 +808,18 @@ def _patch_fetch_deps(
         )
         cid_to_data[cid] = data
 
-    def _fake_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        if "block" in cmd and "get" in cmd:
-            cid = cmd[-1]
-            if cid in cid_to_data:
-                return _Proc(
-                    returncode=0,
-                    stdout=cid_to_data[cid],
-                    stderr=b"",
-                )
-            return _Proc(
-                returncode=1,
-                stdout=b"",
-                stderr=b"not found",
-            )
-        return _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"unknown",
+    def _fake_post_raw(path, **params):  # noqa: ANN001, ANN003, ANN202
+        cid = params.get("arg", "")
+        if cid in cid_to_data:
+            return cid_to_data[cid]
+        raise ExternalToolError(
+            "not found",
+            code="SB_E_KUBO_API_ERROR",
         )
 
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _fake_run,
+        "seedbraid.ipfs_http.post_raw",
+        _fake_post_raw,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -914,25 +852,16 @@ def test_fetch_chunks_parallel_dedup(
     chunks = {_DIGEST_A: _CHUNK_A}
     _patch_fetch_deps(monkeypatch, chunks)
 
-    calls: list[list[str]] = []
+    calls: list[str] = []
 
-    def _tracking_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        calls.append(cmd)
-        if "get" in cmd:
-            return _Proc(
-                returncode=0,
-                stdout=_CHUNK_A,
-                stderr=b"",
-            )
-        return _Proc(
-            returncode=0,
-            stdout=b"ok",
-            stderr=b"",
-        )
+    def _tracking_raw(path, **params):  # noqa: ANN001, ANN003, ANN202
+        cid = params.get("arg", "")
+        calls.append(cid)
+        return _CHUNK_A
 
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _tracking_run,
+        "seedbraid.ipfs_http.post_raw",
+        _tracking_raw,
     )
 
     result = fetch_chunks_parallel(
@@ -941,10 +870,7 @@ def test_fetch_chunks_parallel_dedup(
     )
     assert len(result) == 1
     assert result[_DIGEST_A] == _CHUNK_A
-    get_calls = [
-        c for c in calls if "get" in c
-    ]
-    assert len(get_calls) == 1
+    assert len(calls) == 1
 
 
 # -- fetch_decode_from_ipfs tests ---------------------------
@@ -1058,14 +984,15 @@ def test_fetch_decode_chunk_unavailable(
     monkeypatch, tmp_path,
 ) -> None:
     """ExternalToolError when chunk not on IPFS."""
-    _patch_ipfs(monkeypatch)
+    def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "not found",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        lambda *a, **kw: _Proc(
-            returncode=1,
-            stdout=b"",
-            stderr=b"not found",
-        ),
+        "seedbraid.ipfs_http.post_raw",
+        _fail,
     )
     monkeypatch.setattr(
         "seedbraid.ipfs_chunks.time.sleep",
@@ -1201,6 +1128,21 @@ def test_fetch_decode_cli_error(
 
 
 # -- create_chunk_dag tests ---------------------------------
+# These tests still use subprocess mocks (Phase 3 scope)
+
+
+@dataclass
+class _Proc:
+    returncode: int
+    stdout: bytes | str
+    stderr: bytes | str
+
+
+def _patch_ipfs(monkeypatch):  # noqa: ANN001, ANN202
+    monkeypatch.setattr(
+        "seedbraid.ipfs_chunks.shutil.which",
+        lambda _: "/usr/bin/ipfs",
+    )
 
 
 def test_create_chunk_dag_returns_cid(

@@ -27,6 +27,11 @@ def test_publish_fetch_if_ipfs_installed(
             f"ipfs init failed in test environment: {init.stderr.strip()}"
         )
 
+    from seedbraid.ipfs_http import check_daemon
+
+    if not check_daemon():
+        pytest.skip("kubo daemon not reachable via HTTP API")
+
     src = tmp_path / "s.bin"
     seed = tmp_path / "s.sbd"
     fetched = tmp_path / "fetched.sbd"

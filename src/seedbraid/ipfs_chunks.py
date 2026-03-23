@@ -1,8 +1,9 @@
 """IPFS individual chunk publish/fetch operations.
 
 Implements ``GenomeStorage`` Protocol backed by IPFS
-``block put/get/stat`` CLI commands for distributed
-chunk storage workflows.
+kubo HTTP RPC API for distributed chunk storage
+workflows. MFS/DAG operations still use subprocess
+(Phase 3 migration scope).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from concurrent.futures import (
 from pathlib import Path
 from typing import Self
 
+from . import ipfs_http
 from .chunk_manifest import ChunkEntry, ChunkManifest
 from .cid import cidv1_raw_to_sha256, sha256_to_cidv1_raw
 from .codec import sha256_file
@@ -38,6 +40,7 @@ from .errors import (
 from .storage import GenomeStorage
 
 
+# TODO(Phase 3): remove after MFS/DAG migration
 def _require_ipfs() -> str:
     ipfs = shutil.which("ipfs")
     if ipfs is None:
@@ -100,49 +103,40 @@ class IPFSChunkStorage:
         self._retries = retries
         self._backoff_ms = backoff_ms
         self._published_count = 0
-        self._ipfs: str | None = None
-
-    def _ipfs_path(self) -> str:
-        if self._ipfs is None:
-            self._ipfs = _require_ipfs()
-        return self._ipfs
 
     def has_chunk(
         self, chunk_hash: bytes,
     ) -> bool:
-        """Check chunk availability via ipfs block stat."""
-        ipfs = self._ipfs_path()
+        """Check chunk availability via kubo API."""
         cid = sha256_to_cidv1_raw(
             chunk_hash, is_digest=True,
         )
-        proc = subprocess.run(
-            [ipfs, "block", "stat", cid],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        return proc.returncode == 0
+        try:
+            ipfs_http.post_json(
+                "/block/stat", arg=cid,
+            )
+            return True
+        except ExternalToolError:
+            return False
 
     def get_chunk(
         self, chunk_hash: bytes,
     ) -> bytes | None:
-        """Fetch chunk via ipfs block get with retry.
+        """Fetch chunk via kubo API with retry.
 
         Falls back to HTTP gateway when configured
-        and all CLI attempts fail.
+        and all API attempts fail.
         """
-        ipfs = self._ipfs_path()
         cid = sha256_to_cidv1_raw(
             chunk_hash, is_digest=True,
         )
         for attempt in range(1, self._retries + 1):
-            proc = subprocess.run(
-                [ipfs, "block", "get", cid],
-                check=False,
-                capture_output=True,
-            )
-            if proc.returncode == 0:
-                return proc.stdout
+            try:
+                return ipfs_http.post_raw(
+                    "/block/get", arg=cid,
+                )
+            except ExternalToolError:
+                pass
             if (
                 attempt < self._retries
                 and self._backoff_ms > 0
@@ -168,32 +162,27 @@ class IPFSChunkStorage:
     def put_chunk(
         self, chunk_hash: bytes, data: bytes,
     ) -> bool:
-        """Publish chunk via ipfs block put --cid-codec raw.
+        """Publish chunk via kubo API block put.
 
         Verifies returned CID against expected digest.
         Returns True on successful put.
         """
-        ipfs = self._ipfs_path()
         expected_cid = sha256_to_cidv1_raw(
             chunk_hash, is_digest=True,
         )
         last_err = "ipfs block put failed"
         for attempt in range(1, self._retries + 1):
-            proc = subprocess.run(
-                [
-                    ipfs, "block", "put",
-                    "--cid-codec", "raw",
-                ],
-                input=data,
-                check=False,
-                capture_output=True,
-            )
-            if proc.returncode == 0:
-                returned_cid = (
-                    proc.stdout.decode(
-                        "utf-8", errors="replace",
-                    ).strip()
+            try:
+                result = ipfs_http.post_multipart_json(
+                    "/block/put",
+                    "data",
+                    data,
+                    **{
+                        "cid-codec": "raw",
+                        "mhtype": "sha2-256",
+                    },
                 )
+                returned_cid = result.get("Key", "")
                 if returned_cid != expected_cid:
                     raise ExternalToolError(
                         "CID mismatch after"
@@ -207,12 +196,10 @@ class IPFSChunkStorage:
                     )
                 self._published_count += 1
                 return True
-            last_err = (
-                proc.stderr.decode(
-                    "utf-8", errors="replace",
-                ).strip()
-                or "ipfs block put failed"
-            )
+            except ExternalToolError as exc:
+                if "CID mismatch" in str(exc):
+                    raise
+                last_err = str(exc)
             if (
                 attempt < self._retries
                 and self._backoff_ms > 0
@@ -238,7 +225,7 @@ class IPFSChunkStorage:
         return self._published_count
 
     def close(self) -> None:
-        """No-op for subprocess-based storage."""
+        """No-op for HTTP-based storage."""
 
     def __enter__(self) -> Self:
         return self
