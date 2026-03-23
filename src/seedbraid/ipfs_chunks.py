@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 import subprocess
+import threading
 import time
 import types
 import urllib.error
@@ -103,6 +104,7 @@ class IPFSChunkStorage:
         self._retries = retries
         self._backoff_ms = backoff_ms
         self._published_count = 0
+        self._lock = threading.Lock()
 
     def has_chunk(
         self, chunk_hash: bytes,
@@ -173,6 +175,8 @@ class IPFSChunkStorage:
         last_err = "ipfs block put failed"
         for attempt in range(1, self._retries + 1):
             try:
+                # Hyphenated keys require dict
+                # unpacking (not valid Python kwargs).
                 result = ipfs_http.post_multipart_json(
                     "/block/put",
                     "data",
@@ -189,15 +193,20 @@ class IPFSChunkStorage:
                         " ipfs block put:"
                         f" expected {expected_cid},"
                         f" got {returned_cid}",
-                        code="SB_E_IPFS_CHUNK_PUT",
+                        code=(
+                            "SB_E_IPFS_CID_MISMATCH"
+                        ),
                         next_action=(
                             ACTION_CHECK_IPFS_DAEMON
                         ),
                     )
-                self._published_count += 1
+                with self._lock:
+                    self._published_count += 1
                 return True
             except ExternalToolError as exc:
-                if "CID mismatch" in str(exc):
+                if exc.code == (
+                    "SB_E_IPFS_CID_MISMATCH"
+                ):
                     raise
                 last_err = str(exc)
             if (
@@ -222,7 +231,8 @@ class IPFSChunkStorage:
 
     def count_chunks(self) -> int:
         """Return count of chunks published in session."""
-        return self._published_count
+        with self._lock:
+            return self._published_count
 
     def close(self) -> None:
         """No-op for HTTP-based storage."""

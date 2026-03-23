@@ -224,7 +224,7 @@ def test_put_chunk_cid_mismatch_raises(
     ) as exc_info:
         storage.put_chunk(_CHUNK_HASH, _CHUNK_DATA)
     assert exc_info.value.code == (
-        "SB_E_IPFS_CHUNK_PUT"
+        "SB_E_IPFS_CID_MISMATCH"
     )
 
 
