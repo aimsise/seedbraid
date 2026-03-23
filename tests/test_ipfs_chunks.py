@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 
 import pytest
 from typer.testing import CliRunner
@@ -1128,48 +1127,34 @@ def test_fetch_decode_cli_error(
 
 
 # -- create_chunk_dag tests ---------------------------------
-# These tests still use subprocess mocks (Phase 3 scope)
-
-
-@dataclass
-class _Proc:
-    returncode: int
-    stdout: bytes | str
-    stderr: bytes | str
-
-
-def _patch_ipfs(monkeypatch):  # noqa: ANN001, ANN202
-    monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.shutil.which",
-        lambda _: "/usr/bin/ipfs",
-    )
 
 
 def test_create_chunk_dag_returns_cid(
     monkeypatch,
 ) -> None:
     """create_chunk_dag returns DAG root CID."""
-    _patch_ipfs(monkeypatch)
     expected_cid = "QmDagRoot123"
-    calls: list[list[str]] = []
+    void_calls: list[tuple[str, dict]] = []
 
-    def _fake_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        calls.append(cmd)
-        if "stat" in cmd:
-            return _Proc(
-                returncode=0,
-                stdout=expected_cid + "\n",
-                stderr="",
-            )
-        return _Proc(
-            returncode=0,
-            stdout="",
-            stderr="",
-        )
+    def _fake_post_void(
+        path, **params,
+    ):  # noqa: ANN001, ANN003, ANN202
+        void_calls.append((path, params))
+
+    def _fake_post_json(
+        path, **params,
+    ):  # noqa: ANN001, ANN003, ANN202
+        if path == "/files/stat":
+            return {"Hash": expected_cid}
+        return {}
 
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _fake_run,
+        "seedbraid.ipfs_http.post_void",
+        _fake_post_void,
+    )
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_json",
+        _fake_post_json,
     )
 
     manifest = ChunkManifest(
@@ -1186,26 +1171,27 @@ def test_create_chunk_dag_cleans_up_mfs(
     monkeypatch,
 ) -> None:
     """MFS entry is cleaned up after stat."""
-    _patch_ipfs(monkeypatch)
-    calls: list[list[str]] = []
+    void_calls: list[tuple[str, dict]] = []
 
-    def _fake_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        calls.append(cmd)
-        if "stat" in cmd:
-            return _Proc(
-                returncode=0,
-                stdout="QmRoot\n",
-                stderr="",
-            )
-        return _Proc(
-            returncode=0,
-            stdout="",
-            stderr="",
-        )
+    def _fake_post_void(
+        path, **params,
+    ):  # noqa: ANN001, ANN003, ANN202
+        void_calls.append((path, params))
+
+    def _fake_post_json(
+        path, **params,
+    ):  # noqa: ANN001, ANN003, ANN202
+        if path == "/files/stat":
+            return {"Hash": "QmRoot"}
+        return {}
 
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _fake_run,
+        "seedbraid.ipfs_http.post_void",
+        _fake_post_void,
+    )
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_json",
+        _fake_post_json,
     )
 
     manifest = ChunkManifest(
@@ -1217,34 +1203,34 @@ def test_create_chunk_dag_cleans_up_mfs(
     create_chunk_dag(manifest)
 
     rm_calls = [
-        c for c in calls if "rm" in c
+        (p, kw)
+        for p, kw in void_calls
+        if p == "/files/rm"
     ]
     assert len(rm_calls) == 1
-    assert "-r" in rm_calls[0]
+    assert (
+        rm_calls[0][1].get("recursive")
+        == "true"
+    )
 
 
 def test_create_chunk_dag_mkdir_failure_raises(
     monkeypatch,
 ) -> None:
     """ExternalToolError on MFS mkdir failure."""
-    _patch_ipfs(monkeypatch)
 
-    def _fake_run(cmd, **kw):  # noqa: ANN001, ANN003, ANN202
-        if "mkdir" in cmd:
-            return _Proc(
-                returncode=1,
-                stdout="",
-                stderr="permission denied",
+    def _fail_post_void(
+        path, **params,
+    ):  # noqa: ANN001, ANN003, ANN202
+        if path == "/files/mkdir":
+            raise ExternalToolError(
+                "permission denied",
+                code="SB_E_KUBO_API_ERROR",
             )
-        return _Proc(
-            returncode=0,
-            stdout="",
-            stderr="",
-        )
 
     monkeypatch.setattr(
-        "seedbraid.ipfs_chunks.subprocess.run",
-        _fake_run,
+        "seedbraid.ipfs_http.post_void",
+        _fail_post_void,
     )
 
     manifest = ChunkManifest(
@@ -1260,6 +1246,64 @@ def test_create_chunk_dag_mkdir_failure_raises(
         create_chunk_dag(manifest)
     assert exc_info.value.code == (
         "SB_E_IPFS_MFS"
+    )
+
+
+# -- pin_dag_locally tests ---------------------------------
+
+
+def test_pin_dag_locally_success(
+    monkeypatch,
+) -> None:
+    """pin_dag_locally calls kubo pin/add."""
+    from seedbraid.ipfs_chunks import (
+        pin_dag_locally,
+    )
+
+    pin_calls: list[dict] = []
+
+    def _fake_post_json(
+        path, **params,
+    ):  # noqa: ANN001, ANN003, ANN202
+        pin_calls.append(params)
+        return {"Pins": [params.get("arg", "")]}
+
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_json",
+        _fake_post_json,
+    )
+    pin_dag_locally("QmTestCid")
+    assert len(pin_calls) == 1
+    assert pin_calls[0]["arg"] == "QmTestCid"
+
+
+def test_pin_dag_locally_failure_raises(
+    monkeypatch,
+) -> None:
+    """pin_dag_locally raises on kubo API error."""
+    from seedbraid.ipfs_chunks import (
+        pin_dag_locally,
+    )
+
+    def _fail(
+        path, **params,
+    ):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "pin timeout",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_json",
+        _fail,
+    )
+    with pytest.raises(
+        ExternalToolError,
+        match="pin DAG root",
+    ) as exc_info:
+        pin_dag_locally("QmTestCid")
+    assert exc_info.value.code == (
+        "SB_E_IPFS_PUBLISH"
     )
 
 

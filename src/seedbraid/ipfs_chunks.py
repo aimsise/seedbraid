@@ -2,15 +2,12 @@
 
 Implements ``GenomeStorage`` Protocol backed by IPFS
 kubo HTTP RPC API for distributed chunk storage
-workflows. MFS/DAG operations still use subprocess
-(Phase 3 migration scope).
+workflows.
 """
 
 from __future__ import annotations
 
 import hashlib
-import shutil
-import subprocess
 import threading
 import time
 import types
@@ -39,22 +36,6 @@ from .errors import (
     ExternalToolError,
 )
 from .storage import GenomeStorage
-
-
-# TODO(Phase 3): remove after MFS/DAG migration
-def _require_ipfs() -> str:
-    ipfs = shutil.which("ipfs")
-    if ipfs is None:
-        raise ExternalToolError(
-            "ipfs CLI not found. Install IPFS"
-            " and ensure `ipfs` is on PATH.",
-            code="SB_E_IPFS_NOT_FOUND",
-            next_action=(
-                "Install Kubo and verify"
-                " with `ipfs --version`."
-            ),
-        )
-    return ipfs
 
 
 def _fetch_chunk_from_gateway(
@@ -388,11 +369,11 @@ def create_chunk_dag(
 ) -> str:
     """Create IPFS MFS directory containing all chunks.
 
-    Uses ``ipfs files mkdir`` and ``ipfs files cp``
-    to build a DAG, then retrieves the directory CID
-    via ``ipfs files stat --hash``.  Cleans up the
-    MFS entry afterward, leaving only the DAG in the
-    IPFS object store.
+    Uses kubo ``/files/mkdir`` and ``/files/cp`` to
+    build a DAG, then retrieves the directory CID via
+    ``/files/stat``.  Cleans up the MFS entry
+    afterward, leaving only the DAG in the IPFS object
+    store.
 
     Args:
         manifest: Populated chunk manifest with
@@ -405,82 +386,61 @@ def create_chunk_dag(
         ExternalToolError: If any MFS operation fails
             (code ``SB_E_IPFS_MFS``).
     """
-    ipfs = _require_ipfs()
     ts = int(time.time() * 1000)
     mfs_dir = f"/seedbraid-chunks-{ts}"
 
-    proc = subprocess.run(
-        [ipfs, "files", "mkdir", mfs_dir],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        msg = (
-            proc.stderr.strip()
-            or proc.stdout.strip()
-            or "ipfs files mkdir failed"
+    try:
+        ipfs_http.post_void(
+            "/files/mkdir", arg=mfs_dir,
         )
+    except ExternalToolError as exc:
         raise ExternalToolError(
             "Failed to create MFS directory"
-            f" {mfs_dir}: {msg}",
+            f" {mfs_dir}: {exc}",
             code="SB_E_IPFS_MFS",
             next_action=ACTION_CHECK_IPFS_MFS,
-        )
+        ) from exc
 
     try:
         for entry in manifest.chunks:
-            cp_proc = subprocess.run(
-                [
-                    ipfs, "files", "cp",
-                    f"/ipfs/{entry.cid}",
-                    f"{mfs_dir}/{entry.cid}",
-                ],
-                check=False,
-                text=True,
-                capture_output=True,
-            )
-            if cp_proc.returncode != 0:
-                msg = (
-                    cp_proc.stderr.strip()
-                    or cp_proc.stdout.strip()
-                    or "ipfs files cp failed"
+            try:
+                ipfs_http.post_void(
+                    "/files/cp",
+                    arg=[
+                        f"/ipfs/{entry.cid}",
+                        f"{mfs_dir}/{entry.cid}",
+                    ],
                 )
+            except ExternalToolError as exc:
                 raise ExternalToolError(
                     "Failed to copy chunk"
                     f" {entry.cid} to MFS:"
-                    f" {msg}",
+                    f" {exc}",
                     code="SB_E_IPFS_MFS",
                     next_action=(
                         ACTION_CHECK_IPFS_MFS
                     ),
-                )
+                ) from exc
 
-        stat_proc = subprocess.run(
-            [
-                ipfs, "files", "stat",
-                "--hash", mfs_dir,
-            ],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-        if stat_proc.returncode != 0:
-            msg = (
-                stat_proc.stderr.strip()
-                or stat_proc.stdout.strip()
-                or "ipfs files stat failed"
+        try:
+            stat_result = ipfs_http.post_json(
+                "/files/stat",
+                arg=mfs_dir,
+                hash="true",
             )
+        except ExternalToolError as exc:
             raise ExternalToolError(
                 "Failed to stat MFS directory"
-                f" {mfs_dir}: {msg}",
+                f" {mfs_dir}: {exc}",
                 code="SB_E_IPFS_MFS",
                 next_action=(
                     ACTION_CHECK_IPFS_MFS
                 ),
-            )
+            ) from exc
 
-        dag_root_cid = stat_proc.stdout.strip()
+        dag_root_cid = stat_result.get(
+            "Hash", "",
+        )
         if not dag_root_cid:
             raise ExternalToolError(
                 "ipfs files stat returned"
@@ -491,18 +451,20 @@ def create_chunk_dag(
                 ),
             )
     finally:
-        subprocess.run(
-            [ipfs, "files", "rm", "-r", mfs_dir],
-            check=False,
-            text=True,
-            capture_output=True,
-        )
+        try:
+            ipfs_http.post_void(
+                "/files/rm",
+                arg=mfs_dir,
+                recursive="true",
+            )
+        except ExternalToolError:
+            pass  # best-effort cleanup
 
     return dag_root_cid
 
 
 def pin_dag_locally(cid: str) -> None:
-    """Pin a DAG root CID locally via ipfs pin add.
+    """Pin a DAG root CID locally via kubo API.
 
     Args:
         cid: CID to pin locally.
@@ -510,29 +472,21 @@ def pin_dag_locally(cid: str) -> None:
     Raises:
         ExternalToolError: If pin operation fails.
     """
-    ipfs = _require_ipfs()
-    proc = subprocess.run(
-        [ipfs, "pin", "add", cid],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        msg = (
-            proc.stderr.strip()
-            or proc.stdout.strip()
-            or "ipfs pin add failed"
+    try:
+        ipfs_http.post_json(
+            "/pin/add", arg=cid,
         )
+    except ExternalToolError as exc:
         raise ExternalToolError(
-            f"Failed to pin DAG root"
-            f" {cid}: {msg}",
+            "Failed to pin DAG root"
+            f" {cid}: {exc}",
             code="SB_E_IPFS_PUBLISH",
             next_action=(
                 f"Run `ipfs pin add {cid}`"
                 " manually and verify"
                 " node health."
             ),
-        )
+        ) from exc
 
 
 def fetch_chunk(
