@@ -7,6 +7,7 @@ Thanks for contributing.
 ## Prerequisites
 - Python 3.12+
 - `uv`
+- kubo daemon (for IPFS E2E tests): `ipfs daemon`
 
 ## Setup
 ```bash
@@ -26,7 +27,7 @@ uv sync --no-editable --extra dev --extra zstd
 4. Run quality gates locally:
 ```bash
 UV_CACHE_DIR=.uv-cache uv run --no-editable ruff check .
-PYTHONPATH=src UV_CACHE_DIR=.uv-cache uv run --no-editable python -m pytest
+PYTHONPATH=src uv run --no-editable python -m pytest
 ```
 
 ## Documentation

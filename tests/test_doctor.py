@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,8 +10,8 @@ from seedbraid.diagnostics import (
     DoctorCheck,
     DoctorReport,
     _check_compression,
-    _check_ipfs_cli,
     _check_ipfs_path,
+    _check_kubo_api,
     run_doctor,
 )
 from seedbraid.errors import ExternalToolError, SeedbraidError
@@ -48,9 +47,9 @@ def test_doctor_cli_exit_one_on_fail(monkeypatch) -> None:
         lambda _genome: DoctorReport(
             checks=[
                 DoctorCheck(
-                    check="ipfs_cli",
+                    check="kubo_api",
                     status="fail",
-                    detail="ipfs missing",
+                    detail="kubo unreachable",
                     next_action="install kubo",
                 )
             ]
@@ -60,22 +59,27 @@ def test_doctor_cli_exit_one_on_fail(monkeypatch) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
-    assert "[fail] ipfs_cli: ipfs missing" in result.output
+    assert "[fail] kubo_api: kubo unreachable" in result.output
     assert "next_action: install kubo" in result.output
 
 
-def test_run_doctor_flags_missing_ipfs(tmp_path: Path, monkeypatch) -> None:
+def test_run_doctor_flags_unreachable_kubo(
+    tmp_path: Path, monkeypatch,
+) -> None:
     genome = tmp_path / "genome"
     monkeypatch.setattr(
-        "seedbraid.diagnostics.shutil.which",
-        lambda _name: None,
+        "seedbraid.ipfs_http.daemon_version",
+        lambda: None,
     )
     monkeypatch.delenv("IPFS_PATH", raising=False)
 
     report = run_doctor(genome)
-    ipfs = next(c for c in report.checks if c.check == "ipfs_cli")
+    kubo = next(
+        c for c in report.checks
+        if c.check == "kubo_api"
+    )
 
-    assert ipfs.status == "fail"
+    assert kubo.status == "fail"
     assert report.fail_count >= 1
 
 
@@ -106,44 +110,32 @@ def test_error_output_includes_code_and_next_action(
 
 
 # ---------------------------------------------------------------------------
-# _check_ipfs_cli: success path
+# _check_kubo_api: success / unreachable
 # ---------------------------------------------------------------------------
 
 
-def test_check_ipfs_cli_success(monkeypatch) -> None:
+def test_check_kubo_api_success(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
-        "seedbraid.diagnostics.shutil.which", lambda _: "/usr/bin/ipfs"
+        "seedbraid.ipfs_http.daemon_version",
+        lambda: "0.20.0",
     )
-    monkeypatch.setattr(
-        "seedbraid.diagnostics.subprocess.run",
-        lambda cmd, **kw: subprocess.CompletedProcess(
-            cmd,
-            returncode=0,
-            stdout="ipfs version 0.20.0\n",
-            stderr="",
-        ),
-    )
-    check = _check_ipfs_cli()
+    check = _check_kubo_api()
     assert check.status == "ok"
     assert "0.20.0" in check.detail
 
 
-def test_check_ipfs_cli_fails_on_returncode(monkeypatch) -> None:
+def test_check_kubo_api_unreachable(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
-        "seedbraid.diagnostics.shutil.which", lambda _: "/usr/bin/ipfs"
+        "seedbraid.ipfs_http.daemon_version",
+        lambda: None,
     )
-    monkeypatch.setattr(
-        "seedbraid.diagnostics.subprocess.run",
-        lambda cmd, **kw: subprocess.CompletedProcess(
-            cmd,
-            returncode=1,
-            stdout="",
-            stderr="permission denied",
-        ),
-    )
-    check = _check_ipfs_cli()
+    check = _check_kubo_api()
     assert check.status == "fail"
-    assert "permission denied" in check.detail
+    assert "not reachable" in check.detail
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +204,7 @@ def test_run_doctor_wraps_unexpected_exception(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        "seedbraid.diagnostics._check_ipfs_cli",
+        "seedbraid.diagnostics._check_kubo_api",
         lambda: (_ for _ in ()).throw(ValueError("unexpected")),
     )
     with pytest.raises(ExternalToolError, match="doctor failed unexpectedly"):

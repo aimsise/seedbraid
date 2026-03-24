@@ -114,7 +114,7 @@ ACTION_CHECK_GENOME = (
 )
 ACTION_VERIFY_SNAPSHOT = (
     "Verify the snapshot file or regenerate"
-    " with `seedbraid genome-snapshot`."
+    " with `seedbraid genome snapshot`."
 )
 ACTION_VERIFY_GENES_PACK = (
     "Verify the genes pack file or regenerate"
@@ -131,4 +131,29 @@ ACTION_ENABLE_LEARN_OR_PORTABLE = (
 ACTION_INSTALL_CRYPTO = (
     "Run `uv sync --extra crypto`"
     " to install cryptography."
+)
+ACTION_REGENERATE_MANIFEST = (
+    "Regenerate manifest with"
+    " `seedbraid publish-chunks`."
+)
+ACTION_CHECK_IPFS_DAEMON = (
+    "Ensure kubo daemon is running"
+    " (`ipfs daemon`) and the API"
+    " endpoint is accessible."
+    " Check with `seedbraid doctor`."
+)
+ACTION_CHECK_KUBO_API = (
+    "Ensure kubo daemon is running"
+    " (`ipfs daemon`) and SB_KUBO_API"
+    " points to the correct endpoint."
+    " Default: http://127.0.0.1:5001/api/v0."
+)
+ACTION_CHECK_IPFS_NETWORK = (
+    "Check IPFS network connectivity"
+    " or provide --gateway for fallback."
+)
+ACTION_CHECK_IPFS_MFS = (
+    "Verify IPFS daemon is running and"
+    " MFS is accessible with"
+    " `ipfs files ls /`."
 )

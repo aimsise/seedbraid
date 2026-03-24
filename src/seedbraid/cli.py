@@ -9,14 +9,20 @@ from __future__ import annotations
 import os
 import re
 import secrets
+from dataclasses import replace
 from pathlib import Path
 
 import typer
 
 from . import __version__
+from .chunk_manifest import (
+    manifest_path_for_seed,
+    write_chunk_manifest,
+)
 from .chunking import ChunkerConfig
 from .codec import (
     decode_file,
+    decode_file_with_genome,
     encode_file,
     export_genes,
     import_genes,
@@ -29,6 +35,13 @@ from .container import is_encrypted_seed_data, sign_seed_file
 from .diagnostics import run_doctor
 from .errors import ExternalToolError, SeedbraidError
 from .ipfs import fetch_seed, pin_health_status, publish_seed, remote_pin_cid
+from .ipfs_chunks import (
+    create_chunk_dag,
+    fetch_decode_from_ipfs,
+    pin_dag_locally,
+    publish_chunks_from_genome,
+)
+from .storage import open_genome
 
 app = typer.Typer(help="Seedbraid CLI")
 
@@ -160,28 +173,91 @@ def encode(
         raise typer.Exit(code=_print_error(exc))
 
 
+_IPFS_SCHEME = "ipfs://"
+
+
+def _decode_with_ipfs_genome(
+    seed: Path,
+    genome_uri: str,
+    out: Path,
+    *,
+    encryption_key: str | None = None,
+    gateway: str | None = None,
+) -> str:
+    """Decode using HybridGenomeStorage via ipfs:// URI.
+
+    ``ipfs://`` uses a temporary cache (discarded).
+    ``ipfs:///path/to/cache`` persists the cache.
+    """
+    import contextlib
+    import tempfile
+
+    from .hybrid_storage import HybridGenomeStorage
+    from .ipfs_chunks import IPFSChunkStorage
+    from .storage import SQLiteGenome
+
+    cache_path_str = genome_uri[len(_IPFS_SCHEME):]
+    persist = bool(cache_path_str)
+
+    cache_dir: contextlib.AbstractContextManager[str]
+    if persist:
+        cache_dir = contextlib.nullcontext(
+            cache_path_str,
+        )
+    else:
+        cache_dir = tempfile.TemporaryDirectory()
+
+    with cache_dir as dir_path:
+        db = Path(dir_path) / "genome.sqlite"
+        local = SQLiteGenome(db)
+        ipfs = IPFSChunkStorage(gateway=gateway)
+        with HybridGenomeStorage(
+            local, ipfs,
+            cache_fetched=persist,
+        ) as hybrid:
+            return decode_file_with_genome(
+                seed, hybrid, out,
+                encryption_key=encryption_key,
+            )
+
+
 @app.command()
 def decode(
     seed: Path,
-    genome: Path = typer.Option(..., "--genome"),
+    genome: str = typer.Option(..., "--genome"),
     out: Path = typer.Option(..., "--out"),
     encryption_key: str | None = typer.Option(
         None,
         "--encryption-key",
         help="Passphrase for encrypted SBE1 seed input.",
     ),
+    gateway: str | None = typer.Option(
+        None,
+        "--gateway",
+        help=(
+            "HTTP gateway fallback URL for"
+            " ipfs:// genome mode"
+            " (e.g. https://ipfs.io/ipfs)."
+        ),
+    ),
 ) -> None:
     """Decode a seed into original file."""
     try:
-        digest = decode_file(
-            seed,
-            genome,
-            out,
-            encryption_key=(
-                encryption_key
-                or os.environ.get("SB_ENCRYPTION_KEY")
-            ),
+        effective_key = (
+            encryption_key
+            or os.environ.get("SB_ENCRYPTION_KEY")
         )
+        if genome.startswith(_IPFS_SCHEME):
+            digest = _decode_with_ipfs_genome(
+                seed, genome, out,
+                encryption_key=effective_key,
+                gateway=gateway,
+            )
+        else:
+            digest = decode_file(
+                seed, genome, out,
+                encryption_key=effective_key,
+            )
         typer.echo(f"decoded sha256={digest}")
     except SeedbraidError as exc:
         raise typer.Exit(code=_print_error(exc))
@@ -376,6 +452,281 @@ def publish(
     typer.echo(cid)
 
 
+@app.command("publish-chunks")
+def publish_chunks_cmd(
+    seed: Path,
+    genome: Path = typer.Option(
+        ..., "--genome",
+        help="Genome database path.",
+    ),
+    max_workers: int = typer.Option(
+        16, "--workers", min=1, max=128,
+        help="Parallel publish threads.",
+    ),
+    retries: int = typer.Option(
+        3, "--retries", min=1,
+        help="Retry attempts per chunk.",
+    ),
+    backoff_ms: int = typer.Option(
+        200, "--backoff-ms", min=0,
+        help="Initial backoff in milliseconds.",
+    ),
+    manifest_out: Path | None = typer.Option(
+        None, "--manifest-out",
+        help=(
+            "Output path for chunk manifest."
+            " Defaults to <seed>.sbd.chunks.json"
+        ),
+    ),
+    pin: bool = typer.Option(
+        False, "--pin/--no-pin",
+        help=(
+            "Pin DAG root locally after"
+            " publishing chunks."
+        ),
+    ),
+    remote_pin: bool = typer.Option(
+        False,
+        "--remote-pin/--no-remote-pin",
+        help=(
+            "Register DAG root with remote"
+            " pinning provider."
+        ),
+    ),
+    remote_provider: str = typer.Option(
+        "psa",
+        "--remote-provider",
+        help=(
+            "Remote pin provider key"
+            " (currently: psa)."
+        ),
+    ),
+    remote_endpoint: str | None = typer.Option(
+        None,
+        "--remote-endpoint",
+        help=(
+            "Remote pin API endpoint."
+            " Defaults to SB_PINNING_ENDPOINT."
+        ),
+    ),
+    remote_token: str | None = typer.Option(
+        None,
+        "--remote-token",
+        help=(
+            "Remote pin API bearer token."
+            " Defaults to SB_PINNING_TOKEN."
+        ),
+    ),
+    remote_name: str | None = typer.Option(
+        None,
+        "--remote-name",
+        help=(
+            "Optional remote pin name."
+            " Defaults to seed filename."
+        ),
+    ),
+    remote_timeout_ms: int = typer.Option(
+        10_000,
+        "--remote-timeout-ms",
+        min=1,
+        help=(
+            "Remote pin request timeout"
+            " in milliseconds."
+        ),
+    ),
+    remote_retries: int = typer.Option(
+        3,
+        "--remote-retries",
+        min=1,
+        help="Remote pin retry attempts.",
+    ),
+    remote_backoff_ms: int = typer.Option(
+        200,
+        "--remote-backoff-ms",
+        min=0,
+        help=(
+            "Remote pin exponential backoff"
+            " base in milliseconds."
+        ),
+    ),
+) -> None:
+    """Publish all seed chunks to IPFS."""
+    typer.echo(
+        "warning: publishing chunks to public IPFS."
+        " Chunk content is unencrypted.",
+        err=True,
+    )
+
+    def _progress(
+        done: int, total: int,
+    ) -> None:
+        typer.echo(
+            f"published {done}/{total} chunks",
+            err=True,
+        )
+
+    try:
+        with open_genome(genome) as genome_storage:
+            manifest = publish_chunks_from_genome(
+                seed_path=seed,
+                genome=genome_storage,
+                max_workers=max_workers,
+                retries=retries,
+                backoff_ms=backoff_ms,
+                progress_callback=_progress,
+            )
+    except (
+        SeedbraidError, ExternalToolError,
+    ) as exc:
+        raise typer.Exit(code=_print_error(exc))
+
+    if pin or remote_pin:
+        try:
+            dag_cid = create_chunk_dag(manifest)
+            manifest = replace(
+                manifest, dag_root_cid=dag_cid,
+            )
+        except (
+            SeedbraidError, ExternalToolError,
+        ) as exc:
+            raise typer.Exit(
+                code=_print_error(exc),
+            )
+
+        if pin:
+            try:
+                pin_dag_locally(dag_cid)
+            except (
+                SeedbraidError,
+                ExternalToolError,
+            ) as exc:
+                raise typer.Exit(
+                    code=_print_error(exc),
+                )
+
+        if remote_pin:
+            try:
+                report = remote_pin_cid(
+                    dag_cid,
+                    provider=remote_provider,
+                    endpoint=remote_endpoint,
+                    token=remote_token,
+                    name=(
+                        remote_name
+                        or seed.name
+                    ),
+                    timeout_ms=(
+                        remote_timeout_ms
+                    ),
+                    retries=remote_retries,
+                    backoff_ms=(
+                        remote_backoff_ms
+                    ),
+                )
+            except (
+                SeedbraidError,
+                ExternalToolError,
+            ) as exc:
+                raise typer.Exit(
+                    code=_print_error(exc),
+                )
+            typer.echo(
+                "remote_pin "
+                f"provider={report.provider} "
+                f"cid={report.cid} "
+                f"status={report.status} "
+                f"request_id="
+                f"{report.request_id or 'none'}"
+            )
+
+    out_path = (
+        manifest_out
+        if manifest_out is not None
+        else manifest_path_for_seed(seed)
+    )
+    write_chunk_manifest(manifest, out_path)
+
+    dag_info = ""
+    if manifest.dag_root_cid:
+        dag_info = (
+            f" dag_root={manifest.dag_root_cid}"
+        )
+    typer.echo(
+        f"published {len(manifest.chunks)} chunks"
+        f" manifest={out_path}"
+        f"{dag_info}"
+    )
+
+
+@app.command("fetch-decode")
+def fetch_decode_cmd(
+    seed: Path,
+    out: Path = typer.Option(
+        ..., "--out",
+        help="Output file path for decoded data.",
+    ),
+    max_workers: int = typer.Option(
+        64, "--workers", min=1, max=256,
+        help="Parallel fetch threads.",
+    ),
+    batch_size: int = typer.Option(
+        100, "--batch-size", min=1,
+        help="Chunks per parallel batch.",
+    ),
+    retries: int = typer.Option(
+        3, "--retries", min=1,
+        help="Per-chunk fetch retries.",
+    ),
+    backoff_ms: int = typer.Option(
+        200, "--backoff-ms", min=0,
+        help="Exponential backoff base (ms).",
+    ),
+    gateway: str | None = typer.Option(
+        None, "--gateway",
+        help=(
+            "HTTP gateway fallback URL"
+            " (e.g. https://ipfs.io/ipfs)"
+        ),
+    ),
+    encryption_key: str | None = typer.Option(
+        None, "--encryption-key",
+        help="Passphrase for encrypted seeds.",
+    ),
+) -> None:
+    """Decode seed by fetching chunks from IPFS."""
+    def _progress(
+        done: int, total: int,
+    ) -> None:
+        typer.echo(
+            f"fetched {done}/{total} chunks",
+            err=True,
+        )
+
+    try:
+        digest = fetch_decode_from_ipfs(
+            seed_path=seed,
+            out_path=out,
+            max_workers=max_workers,
+            batch_size=batch_size,
+            retries=retries,
+            backoff_ms=backoff_ms,
+            gateway=gateway,
+            encryption_key=(
+                encryption_key
+                or os.environ.get(
+                    "SB_ENCRYPTION_KEY",
+                )
+            ),
+            progress_callback=_progress,
+        )
+    except (
+        SeedbraidError, ExternalToolError,
+    ) as exc:
+        raise typer.Exit(code=_print_error(exc))
+
+    typer.echo(f"decoded sha256={digest}")
+
+
 @app.command()
 def fetch(
     cid: str,
@@ -384,7 +735,10 @@ def fetch(
         3,
         "--retries",
         min=1,
-        help="Number of ipfs cat attempts before failing or gateway fallback.",
+        help=(
+            "Number of kubo API cat attempts"
+            " before failing or gateway fallback."
+        ),
     ),
     backoff_ms: int = typer.Option(
         200,
@@ -505,7 +859,11 @@ def pin_remote_add(
 def doctor(
     genome: Path = typer.Option(Path("./genome"), "--genome"),
 ) -> None:
-    """Run environment and dependency diagnostics."""
+    """Run environment and dependency diagnostics.
+
+    Checks: Python version, kubo API reachability (SB_KUBO_API),
+    IPFS_PATH, genome path writability, compression libraries.
+    """
     try:
         report = run_doctor(genome)
     except (SeedbraidError, ExternalToolError) as exc:

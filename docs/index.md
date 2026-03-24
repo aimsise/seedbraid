@@ -12,6 +12,7 @@ Seedbraid provides a seed-first architecture for efficient file distribution:
 - **Genome storage** (SQLite) for deduplicated chunk reuse
 - **SBD1 binary seed format** with TLV sections
 - **IPFS integration** for publish/fetch transport
+- **IPFS distributed chunks** for decentralized chunk-level storage and fetch
 - **Optional encryption and signing** for secure distribution
 
 ## Quick Start

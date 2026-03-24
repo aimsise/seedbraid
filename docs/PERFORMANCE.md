@@ -39,3 +39,27 @@ Recommended CI action:
 1. Upload JSON artifact.
 2. Track trend over time.
 3. Tighten thresholds after baseline stabilization.
+
+## IPFS Chunk Fetch Performance
+
+### Scope
+- Workload: CDC-chunked file publish to local IPFS daemon, then parallel
+  fetch and reconstruct.
+- Operations measured: chunk publish throughput, chunk fetch throughput,
+  peak memory during fetch-decode.
+
+### Reference Thresholds (Local Daemon)
+- `min_chunk_publish_throughput` = 10 chunks/s (16 workers)
+- `min_chunk_fetch_throughput` = 50 chunks/s (64 workers)
+- `max_fetch_decode_memory_mib` = 100 MiB (1K chunks, batch_size=100)
+
+Notes:
+- Thresholds apply only when `ipfs` CLI is available; IPFS tests and
+  benchmarks are auto-skipped in environments without a running daemon.
+- Benchmark integration into `scripts/bench_gate.py` is deferred;
+  local daemon availability varies across CI environments.
+- Memory bound is derived from `batch_size=100 * avg_chunk=64KiB =
+  6.4 MiB` active buffer; 100 MiB ceiling allows for process overhead
+  and hash table materialization.
+- Publish throughput is lower than fetch because `ipfs block put` is a
+  write operation with storage commitment; fetch is a read-only operation.

@@ -23,6 +23,31 @@
 4. Tampering
 - Modified container sections could induce corruption if unchecked.
 
+5. Chunk exposure on public IPFS
+- Individual chunks published to IPFS are globally retrievable by CID;
+  chunk content is unencrypted by default.
+
+6. Chunk unavailability (GC/unpinned)
+- Unpinned chunks may be garbage-collected by IPFS nodes, preventing
+  file reconstruction.
+
+7. Chunk manifest integrity
+- A tampered `.sbd.chunks.json` sidecar could map hashes to wrong CIDs,
+  causing fetch of incorrect or malicious chunk payloads.
+
+8. Kubo API endpoint exposure
+- Default kubo API listens on 127.0.0.1:5001 (localhost only).
+  Misconfigured nodes exposing the API to public networks allow
+  unauthorized content injection, retrieval, and node control via
+  the full kubo RPC API surface (not limited to seedbraid operations).
+
+9. SB_KUBO_API endpoint override
+- The `SB_KUBO_API` environment variable allows pointing seedbraid
+  to an arbitrary HTTP endpoint. A compromised or malicious endpoint
+  could return tampered block data; however, chunk content is
+  SHA-256-verified post-fetch so data integrity is preserved.
+  An attacker could deny service by returning errors.
+
 ## Current Mitigations
 - Integrity section validates manifest, recipe, and full payload CRC32.
 - Verify/decode enforce expected output SHA-256.
@@ -30,6 +55,15 @@
 - Optional encrypted wrapper (`SBE1`) protects seed confidentiality at rest/in transit when passphrase is provided.
 - Optional private-manifest mode (`--manifest-private`) reduces exposed metadata fields.
 - `seedbraid publish` warns when uploading unencrypted seeds.
+- IPFS chunk fetches are SHA-256-verified against the seed recipe hash
+  table after retrieval; mismatched chunks are rejected before decode.
+- DAG pinning via MFS root CID reduces GC exposure for published chunks.
+- `seedbraid publish-chunks` displays a warning when publishing to a
+  public IPFS network without encryption.
+- kubo API defaults to localhost-only endpoint (127.0.0.1:5001);
+  seedbraid does not modify kubo listener configuration.
+- `SB_KUBO_API` override is documented as operator responsibility;
+  fetched chunk bytes are SHA-256-verified regardless of endpoint.
 
 ## KDF Cost Parameters
 - SBE1 v2/v3 embed scrypt parameters (n, r, p) in the header; default is n=32768, r=8, p=1.
@@ -96,6 +130,34 @@
   the package and raises a clear error if missing.
 - v1/v2 read support is preserved; existing encrypted seeds remain decryptable
   without code changes.
+
+## IPFS Distributed Chunk Storage (SBD-ECO-006 Risks)
+- **Chunk content exposure**: Publishing raw CDC chunks to IPFS makes each
+  chunk globally retrievable by its CID. An adversary who learns a CID
+  (e.g., through manifest sidecar leakage or DHT crawling) can retrieve
+  the corresponding chunk bytes. Individual chunks are typically small
+  (8-128 KiB) and lack context, but repeated access patterns could enable
+  partial content reconstruction.
+  - Mitigation: use encrypted seeds (`--encrypt`) so chunk data alone is
+    insufficient without the passphrase; consider chunk-level encryption
+    in a future iteration.
+- **Chunk GC and availability**: IPFS nodes garbage-collect unpinned
+  blocks. If chunks are published without pinning, they may become
+  unavailable after the publisher node reclaims storage.
+  - Mitigation: `publish-chunks --pin` pins via local node; `--remote-pin`
+    uses PSA pinning service for durable storage. DAG root pinning covers
+    all child chunks.
+- **Sidecar tampering**: The `.sbd.chunks.json` manifest is not covered by
+  the SBD1 integrity or signature sections. An attacker who modifies the
+  sidecar could redirect CID lookups to attacker-controlled blocks.
+  - Mitigation: fetched chunks are SHA-256-verified against the seed
+    recipe hash table; any mismatch is rejected. The sidecar is a
+    convenience index, not a trust anchor.
+- **Parallel fetch timing side-channel**: Batch-parallel IPFS fetches may
+  reveal file structure information (number of unique chunks, fetch order)
+  to network observers.
+  - Mitigation: accepted risk for this iteration; future work may add
+    fetch-order randomization or padding.
 
 ## Encryption Option Policy (Future)
 - Add optional envelope encryption section:

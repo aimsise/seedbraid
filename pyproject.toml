@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "seedbraid"
 dynamic = ["version"]
-description = "Seedbraid reference-based reconstruction with CDC and IPFS seed transport"
+description = "Reference-based file reconstruction with CDC chunking, SBD1 binary seed format, and IPFS transport"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -13,12 +13,16 @@ authors = [
   {name = "aimsise"},
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Topic :: System :: Archiving",
   "Typing :: Typed",
+]
+keywords = [
+  "cdc", "chunking", "deduplication", "ipfs",
+  "binary-format", "file-reconstruction", "seed",
 ]
 dependencies = [
   "typer>=0.12",

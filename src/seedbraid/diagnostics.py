@@ -1,6 +1,6 @@
 """Environment and dependency diagnostics for ``seedbraid doctor``.
 
-Checks Python version, IPFS CLI availability, genome path
+Checks Python version, kubo API reachability, genome path
 writability, and compression library status.
 """
 
@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import shutil
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -65,39 +63,32 @@ def _check_python_version() -> DoctorCheck:
     )
 
 
-def _check_ipfs_cli() -> DoctorCheck:
-    ipfs = shutil.which("ipfs")
-    if ipfs is None:
+def _check_kubo_api() -> DoctorCheck:
+    from . import ipfs_http  # deferred: avoid circular import
+
+    version = ipfs_http.daemon_version()
+    if version is None:
         return DoctorCheck(
-            check="ipfs_cli",
+            check="kubo_api",
             status="fail",
-            detail="ipfs binary not found on PATH",
-            next_action="Install Kubo and verify with `ipfs --version`.",
-        )
-    proc = subprocess.run(
-        [ipfs, "--version"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        msg = (
-            proc.stderr.strip()
-            or proc.stdout.strip()
-            or "version check failed"
-        )
-        return DoctorCheck(
-            check="ipfs_cli",
-            status="fail",
-            detail=f"ipfs command failed: {msg}",
+            detail=(
+                "kubo API not reachable at"
+                f" {ipfs_http.api_base_url()}"
+            ),
             next_action=(
-                "Ensure ipfs is executable and"
-                " PATH points to the correct"
-                " binary."
+                "Start kubo daemon (`ipfs daemon`)"
+                " and verify API endpoint."
+                " Override with SB_KUBO_API env var."
             ),
         )
-    version = proc.stdout.strip() or proc.stderr.strip() or "unknown"
-    return DoctorCheck(check="ipfs_cli", status="ok", detail=version)
+    return DoctorCheck(
+        check="kubo_api",
+        status="ok",
+        detail=(
+            f"kubo {version}"
+            f" at {ipfs_http.api_base_url()}"
+        ),
+    )
 
 
 def _check_ipfs_path() -> DoctorCheck:
@@ -212,7 +203,7 @@ def _check_compression() -> list[DoctorCheck]:
 def run_doctor(genome_path: str | Path) -> DoctorReport:
     """Run environment and dependency diagnostics.
 
-    Checks Python version, IPFS CLI availability,
+    Checks Python version, kubo API reachability,
     IPFS_PATH configuration, genome path writability,
     and compression library status.
 
@@ -231,7 +222,7 @@ def run_doctor(genome_path: str | Path) -> DoctorReport:
     checks: list[DoctorCheck] = []
     try:
         checks.append(_check_python_version())
-        checks.append(_check_ipfs_cli())
+        checks.append(_check_kubo_api())
         checks.append(_check_ipfs_path())
         checks.append(_check_genome_path(path))
         checks.extend(_check_compression())

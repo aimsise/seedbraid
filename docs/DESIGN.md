@@ -24,8 +24,19 @@ Migration policy:
 - `storage.py`: pluggable storage interface, SQLite implementation for genome.
 - `container.py`: SBD1 binary TLV serialization/parsing + integrity checks.
 - `codec.py`: encode/decode/verify/prime workflows and genome snapshot/restore.
-- `ipfs.py`: subprocess wrapper for `ipfs add/cat/pin`.
+- `ipfs.py`: kubo HTTP RPC client for IPFS add/cat/pin operations.
+- `ipfs_http.py`: thin kubo HTTP RPC wrapper over urllib.request.
 - `cli.py`: Typer command surface.
+- `ipfs_chunks.py`: individual chunk publish/fetch via kubo HTTP block API.
+- `chunk_manifest.py`: chunk CID sidecar (`.sbd.chunks.json`) management.
+- `hybrid_storage.py`: combined local SQLite + IPFS fallback storage.
+- `cid.py`: CIDv1 deterministic computation from SHA-256 digest.
+- `pinning.py`: remote pinning service integration (PSA).
+- `oci.py`: OCI/ORAS artifact distribution bridge.
+- `mlhooks.py`: MLflow and Hugging Face integration hooks.
+- `errors.py`: exception hierarchy and error codes.
+- `perf.py`: performance benchmarking and gate evaluation.
+- `diagnostics.py`: runtime diagnostics and doctor checks.
 
 ## Why Binary Recipe + Manifest
 - Binary recipe reduces size and parse overhead compared to verbose textual formats.
@@ -136,8 +147,47 @@ Migration policy:
   seed is prepared with `--manifest-private` and access controls are appropriate.
 - Out of scope remains managed production inference/deployment automation.
 
+## IPFS Distributed Chunk Storage (SBD-ECO-006)
+- Publish individual CDC chunks to IPFS as raw blocks via `ipfs block put
+  --cid-codec raw`; reconstruct files by parallel-fetching chunks from IPFS.
+- CIDv1 (raw codec, base32-lower) is computed deterministically from
+  SHA-256 digest using stdlib only (`hashlib`, `base64`).
+- Chunk CID metadata is stored in a JSON sidecar (`.sbd.chunks.json`);
+  SBD1/SBE1 wire format is unchanged.
+- `IPFSChunkStorage` implements the `GenomeStorage` Protocol backed by
+  kubo HTTP RPC API calls (`/api/v0/block/put`, `/get`, `/stat`) with
+  retry and exponential backoff.
+- Parallel publish uses `ThreadPoolExecutor` (default 16 workers);
+  parallel fetch is batched (default `batch_size=100`) to respect the
+  streaming-first memory model.
+- `HybridGenomeStorage` combines local `SQLiteGenome` with IPFS
+  fallback; `cache_fetched` defaults to `True` at API level, storing
+  remotely-fetched chunks into the local genome for subsequent reads
+  (CLI `ipfs://` bare URI overrides to `False` for temporary cache).
+- `seedbraid decode --genome ipfs://` activates `HybridGenomeStorage`
+  automatically.  `ipfs://` alone uses a temporary cache (discarded
+  after decode); `ipfs:///path/to/cache` persists fetched chunks to
+  the specified directory for future reuse.
+- CLI commands: `seedbraid publish-chunks` publishes all chunks referenced
+  by a seed; `seedbraid fetch-decode` reconstructs the original file from
+  IPFS.
+- Chunk DAG pinning via IPFS MFS: `create_chunk_dag` builds a
+  temporary MFS directory (`/seedbraid-chunks-<timestamp>`),
+  copies all chunk CIDs into it, retrieves the directory root CID
+  via `ipfs files stat --hash`, and removes the MFS entry in a
+  `finally` block.  The DAG remains in the IPFS object store,
+  pinnable via local `ipfs pin add` or remote PSA pin.
+- IPFS operations use kubo HTTP RPC API (`/api/v0/`) via stdlib
+  `urllib.request`; subprocess CLI calls are removed.  The API
+  endpoint defaults to `http://127.0.0.1:5001/api/v0` and is
+  configurable via `SB_KUBO_API` environment variable.
+- `seedbraid doctor` checks kubo API reachability via
+  `POST /api/v0/version` instead of `ipfs --version` CLI probe.
+- Out of scope for this iteration: asyncio fetch, chunk-level encryption.
+
 ## Assumptions
-- `ipfs` CLI installed/configured when publish/fetch is used.
+- kubo daemon running (HTTP RPC API accessible at `SB_KUBO_API`,
+  default `http://127.0.0.1:5001/api/v0`) when publish/fetch is used.
 - Genome path points to writable location.
 - Single-process access for SQLite baseline (no aggressive concurrency tuning).
 

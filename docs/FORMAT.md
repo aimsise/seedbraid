@@ -158,6 +158,27 @@ Signed payload definition:
   chunker profile, transport references); public uploads should use
   `--manifest-private` and encrypted seeds when needed.
 
+## Chunk Manifest Sidecar (Operational, No Wire-Format Change)
+- SBD-ECO-006 adds IPFS distributed chunk storage for individual chunk
+  publish/fetch workflows.
+- Each CDC chunk is published to IPFS as a raw block via `ipfs block put
+  --cid-codec raw`; CIDv1 (raw codec, base32-lower) is computed
+  deterministically from the chunk SHA-256 digest.
+- Chunk CID information is stored in a JSON sidecar file alongside the
+  seed, not inside the SBD1 container.
+- Sidecar filename convention: `<seed_name>.sbd.chunks.json`
+- Sidecar JSON schema:
+  - `format`: `"SBD1-CHUNKS"` (fixed string)
+  - `version`: `1` (integer)
+  - `seed_sha256`: hex string (SHA-256 of the seed file)
+  - `chunks`: array of `{"hash": "<hex_sha256>", "cid": "bafkrei..."}`
+  - `dag_root_cid`: string or null (MFS DAG root for pinning)
+- Sidecar files are operational metadata only and do not modify SBD1/SBE1
+  bytes, section layout, or integrity/signature semantics.
+- File reconstruction from IPFS uses the seed recipe hash table to derive
+  CIDs and parallel-fetch chunks; output SHA-256 is verified against
+  `manifest.source_sha256` as in normal decode.
+
 ## Versioning
 - Backward-incompatible changes require `version` increment and docs update.
 - New optional sections may be added via TLV without changing version.

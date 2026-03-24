@@ -61,12 +61,15 @@ uvx seedbraid doctor
 ```bash
 # pip
 pip install "seedbraid[zstd]"
+pip install "seedbraid[crypto]"    # encryption / signing support
 
 # pipx
 pipx install "seedbraid[zstd]"
+pipx install "seedbraid[crypto]"
 
 # uvx
 uvx --from "seedbraid[zstd]" seedbraid doctor
+uvx --from "seedbraid[crypto]" seedbraid doctor
 ```
 
 ## Quick Start
@@ -105,13 +108,13 @@ A common Seedbraid workflow looks like this:
 5. Fetch and decode later using the genome
 6. Run strict verification when exact restore is required
 
-## Beta Status
+## Stability
 
-Seedbraid is currently in beta.
+Seedbraid v2.0.0 is production-ready.
 
-It is already useful for evaluation, benchmarking, and controlled workflows, but before production use you should validate behavior in your own runtime, storage, and network environment.
+Before deploying to your environment, validate behavior in your own runtime, storage, and network configuration.
 
-For production readiness, treat successful `verify --strict` and bit-perfect restore checks as release gates.
+Treat successful `verify --strict` and bit-perfect restore checks as release gates.
 
 ## Production Validation Checklist
 
@@ -208,7 +211,7 @@ seedbraid doctor --genome ./genome
 `doctor` checks:
 
 - Python runtime compatibility (`>=3.12`)
-- IPFS CLI availability and version
+- kubo API reachability (`SB_KUBO_API`)
 - `IPFS_PATH` state
 - genome path writability
 - compression support (`zlib`, optional `zstd`)
@@ -220,6 +223,40 @@ seedbraid doctor --genome ./genome
 seedbraid genome snapshot --genome ./genome --out genome.sgs
 seedbraid genome restore genome.sgs --genome ./genome-dr --replace
 ```
+
+#### Publish Chunks to IPFS
+```bash
+seedbraid publish-chunks seed.sbd --genome ./genome
+seedbraid publish-chunks seed.sbd --genome ./genome \
+  --manifest-out chunks.json --workers 32
+seedbraid publish-chunks seed.sbd --genome ./genome \
+  --pin --remote-pin \
+  --remote-endpoint https://pin.example/api/v1 \
+  --remote-token "$SB_PINNING_TOKEN"
+```
+
+`publish-chunks` publishes all CDC chunks referenced by a seed to IPFS as raw blocks, generates a chunk manifest sidecar (`.sbd.chunks.json`), and optionally pins the chunk DAG locally or via a remote pinning provider.
+
+#### Fetch and Decode from IPFS
+```bash
+seedbraid fetch-decode seed.sbd --out recovered.bin
+seedbraid fetch-decode seed.sbd --out recovered.bin \
+  --workers 64 --batch-size 200 --retries 5
+seedbraid fetch-decode seed.sbd --out recovered.bin \
+  --gateway https://ipfs.io/ipfs
+```
+
+`fetch-decode` reads a seed and its chunk manifest, fetches all chunks from IPFS in parallel batches, and reconstructs the original file. Requires the chunk manifest sidecar (`.sbd.chunks.json`) alongside the seed.
+
+#### Decode with IPFS Genome
+```bash
+seedbraid decode seed.sbd --genome ipfs:// --out recovered.bin
+seedbraid decode seed.sbd --genome ipfs:///path/to/cache --out recovered.bin
+seedbraid decode seed.sbd --genome ipfs:// --out recovered.bin \
+  --gateway https://ipfs.io/ipfs
+```
+
+Using `--genome ipfs://` activates hybrid storage: chunks are fetched from IPFS with local SQLite caching. `ipfs://` uses a temporary cache; `ipfs:///path/to/cache` persists fetched chunks for future reuse.
 
 #### Publish to IPFS
 ```bash
@@ -244,7 +281,7 @@ seedbraid fetch <cid> --out fetched.sbd --retries 5 --backoff-ms 300
 seedbraid fetch <cid> --out fetched.sbd --gateway https://ipfs.io/ipfs
 ```
 
-`fetch` retries `ipfs cat` with exponential backoff and can fall back to an HTTP gateway.
+`fetch` retries with exponential backoff via the kubo HTTP API and can fall back to an HTTP gateway.
 
 #### Pin Health
 ```bash
@@ -292,18 +329,26 @@ eval "$(seedbraid gen-encryption-key --shell)"
 
 ## IPFS Setup
 
-Check whether the IPFS CLI is available:
+Start the kubo daemon:
 
 ```bash
-ipfs --version
+ipfs daemon
 ```
 
-If missing, install Kubo and ensure `ipfs` is available on your `PATH`.
+By default, seedbraid connects to the kubo HTTP API at
+`http://127.0.0.1:5001/api/v0`.  Override with the `SB_KUBO_API`
+environment variable:
+
+```bash
+export SB_KUBO_API=http://127.0.0.1:5001/api/v0
+```
+
+Run `seedbraid doctor` to verify connectivity.
 
 ## Common Failures
 
-- `ipfs CLI not found`
-  - Install IPFS and confirm with `ipfs --version`
+- `kubo daemon not reachable`
+  - Install Kubo, start the daemon with `ipfs daemon`, and verify with `seedbraid doctor`
 - `Missing required chunk` on decode or verify
   - Provide the correct `--genome`, or re-encode with `--portable`
 - `zstd` compression error
@@ -315,13 +360,17 @@ If missing, install Kubo and ensure `ipfs` is available on your `PATH`.
 |---|---|---|
 | Encryption requested but key missing | `SB_E_ENCRYPTION_KEY_MISSING` | Pass `--encryption-key` or set `SB_ENCRYPTION_KEY`. |
 | Signing requested but key missing | `SB_E_SIGNING_KEY_MISSING` | Export signing key env var and retry `seedbraid sign`. |
-| IPFS CLI missing | `SB_E_IPFS_NOT_FOUND` | Install Kubo and confirm `ipfs --version`. |
+| Kubo daemon unreachable | `SB_E_IPFS_NOT_FOUND` | Install Kubo, run `ipfs daemon`, set `SB_KUBO_API` if non-default endpoint. |
 | IPFS fetch/publish failure | `SB_E_IPFS_FETCH` / `SB_E_IPFS_PUBLISH` | Check daemon/network, retry, use gateway fallback if needed. |
 | Remote pin configuration missing | `SB_E_REMOTE_PIN_CONFIG` | Set endpoint/token env vars or pass options. |
 | Remote pin auth failed | `SB_E_REMOTE_PIN_AUTH` | Verify provider token permissions and retry. |
 | Remote pin request invalid | `SB_E_REMOTE_PIN_REQUEST` | Check CID/provider options and retry. |
 | Remote pin timeout/failure | `SB_E_REMOTE_PIN_TIMEOUT` / `SB_E_REMOTE_PIN` | Increase retries/timeout or check provider health. |
 | Seed parse/integrity failure | `SB_E_SEED_FORMAT` | Re-fetch/rebuild seed and verify source integrity. |
+| IPFS chunk publish failed | `SB_E_IPFS_CHUNK_PUT` | Check IPFS daemon, retry, verify chunk availability. |
+| IPFS chunk fetch failed | `SB_E_IPFS_CHUNK_GET` | Check daemon/network, retry, use `--gateway` fallback. |
+| Chunk manifest invalid | `SB_E_CHUNK_MANIFEST_FORMAT` | Regenerate manifest with `publish-chunks`. |
+| IPFS MFS operation failed | `SB_E_IPFS_MFS` | Verify daemon is running with `seedbraid doctor`. |
 
 ---
 
@@ -350,12 +399,12 @@ uv lock
 ## Local Checks
 
 ```bash
-uv run --no-editable ruff check .
-uv run --no-editable python -m pytest
-uv run --no-editable python -m pytest tests/test_compat_fixtures.py
+UV_CACHE_DIR=.uv-cache uv run --no-editable ruff check .
+PYTHONPATH=src uv run --no-editable python -m pytest
+PYTHONPATH=src uv run --no-editable python -m pytest tests/test_compat_fixtures.py
 ```
 
-IPFS tests auto-skip when `ipfs` is not installed.
+IPFS tests auto-skip when the kubo daemon is not reachable.
 
 Compatibility fixtures are stored in `tests/fixtures/compat/v1/` and validated by `tests/test_compat_fixtures.py`.
 
