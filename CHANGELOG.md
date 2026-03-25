@@ -7,6 +7,12 @@ Version numbers follow [PEP 440](https://peps.python.org/pep-0440/).
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-03-26
+
+### Documentation
+- README: add remote pinning setup and verification guide (#36)
+- README: add data recovery scenarios and protection strategies (#35)
+
 ## [2.0.0] - 2026-03-25
 
 ### Changed
@@ -176,7 +182,8 @@ Initial OSS public release.
 - CI benchmark gates for dedup ratio and throughput
 - Compatibility fixture regression coverage
 
-[Unreleased]: https://github.com/aimsise/seedbraid/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/aimsise/seedbraid/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/aimsise/seedbraid/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/aimsise/seedbraid/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/aimsise/seedbraid/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/aimsise/seedbraid/compare/v1.1.2...v1.1.3
