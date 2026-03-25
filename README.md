@@ -345,6 +345,42 @@ export SB_KUBO_API=http://127.0.0.1:5001/api/v0
 
 Run `seedbraid doctor` to verify connectivity.
 
+## Remote Pinning Setup
+
+To use a remote pinning service, set the endpoint and token as environment variables.
+
+Using a shell profile (`~/.bashrc`, `~/.zshrc`):
+
+```bash
+export SB_PINNING_ENDPOINT='https://api.pinata.cloud/psa'
+export SB_PINNING_TOKEN='your-api-token'
+```
+
+Using [direnv](https://direnv.net/) (`.envrc` in your project directory):
+
+```bash
+# .envrc
+export SB_PINNING_ENDPOINT='https://api.pinata.cloud/psa'
+export SB_PINNING_TOKEN='your-api-token'
+```
+
+With these variables set, `--remote-pin` works without passing `--remote-endpoint` and `--remote-token` each time.
+
+### Verifying a Remote Pin
+
+After publishing with `--remote-pin`, confirm the pin is active:
+
+```bash
+# 1. Check local pin and block availability
+seedbraid pin-health <cid>
+
+# 2. Verify the pinned content is fetchable from the network
+seedbraid fetch <cid> --out /tmp/verify.sbd
+seedbraid verify /tmp/verify.sbd --genome ./genome --strict
+```
+
+If `pin-health` reports the CID is pinned and `fetch` + `verify --strict` succeed, the remote pin is working correctly.
+
 ## Common Failures
 
 - `kubo daemon not reachable`
