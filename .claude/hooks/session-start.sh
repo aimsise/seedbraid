@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cat > /dev/null  # consume stdin
 
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 CHANGED=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
