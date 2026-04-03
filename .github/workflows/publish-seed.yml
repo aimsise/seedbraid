@@ -45,7 +45,7 @@ on:
         description: "Kubo version to install when dry_run=false"
         required: true
         type: string
-        default: "0.32.1"
+        default: "0.34.1"
       pin:
         description: "Pin after publish"
         required: true
