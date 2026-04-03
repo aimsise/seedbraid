@@ -50,10 +50,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --no-editable --extra dev
       - name: Install Kubo
-        uses: ipfs/download-ipfs-distribution-action@v1
-        with:
-          name: kubo
-          version: v0.32.1
+        run: |
+          KUBO_VERSION="v0.34.1"
+          ARCHIVE="kubo_${KUBO_VERSION}_linux-amd64.tar.gz"
+          URL="https://github.com/ipfs/kubo/releases/download/${KUBO_VERSION}/${ARCHIVE}"
+          curl -fsSL "${URL}" -o /tmp/kubo.tgz
+          tar -xzf /tmp/kubo.tgz -C /tmp
+          sudo install -m 0755 /tmp/kubo/ipfs /usr/local/bin/ipfs
+          ipfs --version
       - name: Start kubo daemon
         run: |
           ipfs init
