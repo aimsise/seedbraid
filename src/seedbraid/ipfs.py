@@ -120,7 +120,7 @@ def _fetch_from_gateway(cid: str, gateway: str) -> bytes:
         with urllib.request.urlopen(
             url, timeout=30,
         ) as response:
-            data = response.read(
+            data: bytes = response.read(
                 MAX_SEED_FETCH_BYTES + 1,
             )
     except (urllib.error.URLError, OSError) as exc:
