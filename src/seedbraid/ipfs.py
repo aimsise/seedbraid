@@ -25,6 +25,8 @@ from .pinning import (
     build_remote_pin_provider,
 )
 
+MAX_SEED_FETCH_BYTES = 10 * 1024 * 1024  # 10 MiB
+
 
 def publish_seed(seed_path: str | Path, pin: bool = False) -> str:
     """Publish a seed file to IPFS and return its CID.
@@ -115,8 +117,12 @@ def _validate_fetched_seed_blob(cid: str, out_path: Path, blob: bytes) -> None:
 def _fetch_from_gateway(cid: str, gateway: str) -> bytes:
     url = f"{gateway.rstrip('/')}/{cid}"
     try:
-        with urllib.request.urlopen(url, timeout=30) as response:
-            return response.read()  # type: ignore[no-any-return]
+        with urllib.request.urlopen(
+            url, timeout=30,
+        ) as response:
+            data: bytes = response.read(
+                MAX_SEED_FETCH_BYTES + 1,
+            )
     except (urllib.error.URLError, OSError) as exc:
         raise ExternalToolError(
             f"Gateway fetch failed ({url}): {exc}",
@@ -127,6 +133,20 @@ def _fetch_from_gateway(cid: str, gateway: str) -> bytes:
                 " environment."
             ),
         ) from exc
+    if len(data) > MAX_SEED_FETCH_BYTES:
+        raise ExternalToolError(
+            f"Gateway response for CID {cid}"
+            f" exceeds {MAX_SEED_FETCH_BYTES}"
+            " bytes; refusing to load"
+            " into memory.",
+            code="SB_E_IPFS_FETCH",
+            next_action=(
+                "Verify the CID points to a"
+                " valid seed file, not a"
+                " large payload."
+            ),
+        )
+    return data
 
 
 def fetch_seed(
@@ -176,6 +196,18 @@ def fetch_seed(
     for attempt in range(1, retries + 1):
         try:
             blob = ipfs_http.post_raw("/cat", arg=cid)
+            if len(blob) > MAX_SEED_FETCH_BYTES:
+                raise ExternalToolError(
+                    f"ipfs cat response for CID"
+                    f" {cid} exceeds"
+                    f" {MAX_SEED_FETCH_BYTES}"
+                    " bytes.",
+                    code="SB_E_IPFS_FETCH",
+                    next_action=(
+                        "Verify the CID points"
+                        " to a valid seed file."
+                    ),
+                )
             _validate_fetched_seed_blob(cid, out_path, blob)
             return
         except ExternalToolError as exc:

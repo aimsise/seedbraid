@@ -149,7 +149,7 @@ def test_get_chunk_gateway_fallback(
         def __exit__(self, *a):  # noqa: ANN001, ANN201
             return False
 
-        def read(self) -> bytes:
+        def read(self, n: int = -1) -> bytes:
             return self._data
 
     def _fake_urlopen(url, timeout=30):  # noqa: ANN001, ANN202
@@ -185,6 +185,68 @@ def test_get_chunk_gateway_fallback(
         f"https://gw.example/ipfs/{_CHUNK_CID}"
     )
     assert urls == [expected_url]
+
+
+def test_get_chunk_rejects_mismatched_hash(
+    monkeypatch,
+) -> None:
+    """kubo API returns wrong data → CID mismatch."""
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_raw",
+        lambda path, **params: b"corrupted",
+    )
+    storage = IPFSChunkStorage()
+    with pytest.raises(
+        ExternalToolError, match="hash mismatch",
+    ) as exc_info:
+        storage.get_chunk(_CHUNK_HASH)
+    assert (
+        exc_info.value.code
+        == "SB_E_IPFS_CID_MISMATCH"
+    )
+
+
+def test_get_chunk_gateway_rejects_mismatched_hash(
+    monkeypatch,
+) -> None:
+    """Gateway returns wrong data → CID mismatch."""
+
+    class _Resp:
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, *a):  # noqa: ANN001, ANN201
+            return False
+
+        def read(self, n: int = -1) -> bytes:
+            return b"tampered"
+
+    def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "offline",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_raw", _fail,
+    )
+    monkeypatch.setattr(
+        "seedbraid.ipfs_chunks.urllib.request.urlopen",
+        lambda url, timeout=30: _Resp(),
+    )
+    monkeypatch.setattr(
+        "seedbraid.ipfs_chunks.time.sleep",
+        lambda _: None,
+    )
+
+    storage = IPFSChunkStorage(
+        gateway="https://gw.example/ipfs",
+        retries=1,
+    )
+    with pytest.raises(
+        ExternalToolError, match="hash mismatch",
+    ):
+        storage.get_chunk(_CHUNK_HASH)
 
 
 # -- put_chunk -----------------------------------------------

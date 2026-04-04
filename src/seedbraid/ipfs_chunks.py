@@ -37,6 +37,8 @@ from .errors import (
 )
 from .storage import GenomeStorage
 
+MAX_CHUNK_FETCH_BYTES = 4 * 1024 * 1024  # 4 MiB
+
 
 def _fetch_chunk_from_gateway(
     cid: str, gateway: str,
@@ -47,7 +49,21 @@ def _fetch_chunk_from_gateway(
         with urllib.request.urlopen(
             url, timeout=30,
         ) as response:
-            return response.read()  # type: ignore[no-any-return]
+            data: bytes = response.read(
+                MAX_CHUNK_FETCH_BYTES + 1,
+            )
+            if len(data) > MAX_CHUNK_FETCH_BYTES:
+                raise ExternalToolError(
+                    "Gateway chunk response"
+                    f" for CID {cid} exceeds"
+                    f" {MAX_CHUNK_FETCH_BYTES}"
+                    " bytes.",
+                    code="SB_E_IPFS_CHUNK_GET",
+                    next_action=(
+                        ACTION_CHECK_IPFS_NETWORK
+                    ),
+                )
+            return data
     except (
         urllib.error.URLError,
         OSError,
@@ -115,11 +131,43 @@ class IPFSChunkStorage:
         )
         for attempt in range(1, self._retries + 1):
             try:
-                return ipfs_http.post_raw(
+                data = ipfs_http.post_raw(
                     "/block/get", arg=cid,
                 )
-            except ExternalToolError:
-                pass
+                if len(data) > MAX_CHUNK_FETCH_BYTES:
+                    raise ExternalToolError(
+                        "IPFS block/get response"
+                        f" for CID {cid} exceeds"
+                        f" {MAX_CHUNK_FETCH_BYTES}"
+                        " bytes.",
+                        code=(
+                            "SB_E_IPFS_CHUNK_GET"
+                        ),
+                        next_action=(
+                            ACTION_CHECK_IPFS_DAEMON
+                        ),
+                    )
+                actual = hashlib.sha256(data).digest()
+                if actual != chunk_hash:
+                    raise ExternalToolError(
+                        "IPFS chunk hash mismatch"
+                        f" for CID {cid}:"
+                        f" expected"
+                        f" {chunk_hash.hex()},"
+                        f" got {actual.hex()}",
+                        code=(
+                            "SB_E_IPFS_CID_MISMATCH"
+                        ),
+                        next_action=(
+                            ACTION_CHECK_IPFS_DAEMON
+                        ),
+                    )
+                return data
+            except ExternalToolError as exc:
+                if exc.code == (
+                    "SB_E_IPFS_CID_MISMATCH"
+                ):
+                    raise
             if (
                 attempt < self._retries
                 and self._backoff_ms > 0
@@ -134,11 +182,32 @@ class IPFSChunkStorage:
 
         if self._gateway:
             try:
-                return _fetch_chunk_from_gateway(
+                data = _fetch_chunk_from_gateway(
                     cid, self._gateway,
                 )
-            except ExternalToolError:
-                pass
+                actual = hashlib.sha256(
+                    data,
+                ).digest()
+                if actual != chunk_hash:
+                    raise ExternalToolError(
+                        "Gateway chunk hash"
+                        " mismatch for CID"
+                        f" {cid}: expected"
+                        f" {chunk_hash.hex()},"
+                        f" got {actual.hex()}",
+                        code=(
+                            "SB_E_IPFS_CID_MISMATCH"
+                        ),
+                        next_action=(
+                            ACTION_CHECK_IPFS_DAEMON
+                        ),
+                    )
+                return data
+            except ExternalToolError as exc:
+                if exc.code == (
+                    "SB_E_IPFS_CID_MISMATCH"
+                ):
+                    raise
 
         return None
 

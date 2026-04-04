@@ -64,6 +64,10 @@ class DecodeError(SeedbraidError):
         super().__init__(message, code=code, next_action=next_action)
 
 
+class SecurityWarning(UserWarning):
+    """Raised when a security-relevant fallback is used."""
+
+
 class ExternalToolError(SeedbraidError):
     """Raised when external tools (e.g., ipfs) are unavailable or fail."""
 

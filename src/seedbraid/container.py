@@ -13,6 +13,7 @@ import hmac
 import json
 import os
 import struct
+import warnings
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,7 @@ from .errors import (
     ACTION_UPGRADE_SEEDBRAID,
     ACTION_VERIFY_ENCRYPTION,
     ACTION_VERIFY_SEED,
+    SecurityWarning,
     SeedFormatError,
 )
 
@@ -49,9 +51,13 @@ VERSION = 1
 ENC_MAGIC = b"SBE1"
 ENC_VERSION = 2
 
+MAX_CHUNK_SIZE = 128 * 1024 * 1024  # 128 MiB
+
 SCRYPT_N_DEFAULT = 32768
 SCRYPT_N_V1 = 16384  # fixed n for SBE1 v1 header
 SCRYPT_N_MIN = 16384
+SCRYPT_R_MIN = 1
+SCRYPT_P_MIN = 1
 SCRYPT_R_DEFAULT = 8
 SCRYPT_P_DEFAULT = 1
 
@@ -300,6 +306,12 @@ def decode_raw_payloads(data: bytes) -> dict[int, bytes]:
             )
         index, size = struct.unpack_from(">II", data, offset)
         offset += 8
+        if size > MAX_CHUNK_SIZE:
+            raise SeedFormatError(
+                f"RAW chunk size {size} exceeds"
+                f" limit {MAX_CHUNK_SIZE}.",
+                next_action=ACTION_REFETCH_SEED,
+            )
         if offset + size > len(data):
             raise SeedFormatError(
                 "RAW section entry payload truncated.",
@@ -577,6 +589,18 @@ def validate_encrypted_seed_envelope(
             " possible downgrade attack.",
             next_action=ACTION_REFETCH_SEED,
         )
+    if version >= 2 and (
+        scrypt_r < SCRYPT_R_MIN
+        or scrypt_p < SCRYPT_P_MIN
+    ):
+        raise SeedFormatError(
+            f"scrypt r={scrypt_r}, p={scrypt_p}"
+            " below minimum"
+            f" (r>={SCRYPT_R_MIN},"
+            f" p>={SCRYPT_P_MIN});"
+            " possible downgrade attack.",
+            next_action=ACTION_REFETCH_SEED,
+        )
 
     mac_len = 32 if version <= 2 else 0
     expected_len = (
@@ -636,6 +660,14 @@ def encrypt_seed_bytes(seed_bytes: bytes, passphrase: str) -> bytes:
     """
     if _HAS_CRYPTOGRAPHY:
         return _encrypt_v3(seed_bytes, passphrase)
+    warnings.warn(
+        "cryptography package not installed;"
+        " falling back to legacy v2 encryption"
+        " (non-NIST). Install with:"
+        " pip install cryptography",
+        SecurityWarning,
+        stacklevel=2,
+    )
     return _encrypt_v2(seed_bytes, passphrase)
 
 

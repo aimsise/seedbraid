@@ -1,10 +1,10 @@
 ---
-name: plan2doc
+name: plan2doc-light
 description: >-
-  Create an implementation plan via planner agent and save to .docs/plans/.
-  Use when planning a feature, refactoring, or significant change.
+  Create an implementation plan via planner-light agent (sonnet, for S-size tickets)
+  and save to .docs/plans/. Use for small, well-scoped changes.
 context: fork
-agent: planner
+agent: planner-light
 argument-hint: "<feature or change to plan>"
 ---
 
@@ -32,6 +32,6 @@ Existing research (if any):
 
 ## Error Handling
 
-- **Empty arguments**: Print "Usage: /plan2doc <feature or change to plan>" and stop.
+- **Empty arguments**: Print "Usage: /plan2doc-light <feature or change to plan>" and stop.
 - **Missing .docs/ directories**: Create `.docs/plans/` automatically.
 - **Missing workflow-patterns.md**: Skip the workflow pattern selection step; generate the Claude Code Workflow section from available skills/agents directly.

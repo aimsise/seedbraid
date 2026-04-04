@@ -346,6 +346,18 @@ class PinningServiceAPIProvider:
         if isinstance(pin_obj, dict):
             candidate = pin_obj.get("cid")
             if isinstance(candidate, str) and candidate:
+                if candidate != requested_cid:
+                    raise ExternalToolError(
+                        "PSA response CID"
+                        f" {candidate!r} does"
+                        " not match requested"
+                        f" CID {requested_cid!r}.",
+                        code="SB_E_REMOTE_PIN",
+                        next_action=(
+                            "Verify PSA provider"
+                            " integrity and retry."
+                        ),
+                    )
                 cid = candidate
 
         return RemotePinResult(

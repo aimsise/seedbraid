@@ -17,6 +17,7 @@ from typing import Any
 
 from .chunking import ChunkerConfig, iter_chunks
 from .container import (
+    MAX_CHUNK_SIZE,
     OP_RAW,
     OP_REF,
     Recipe,
@@ -378,9 +379,23 @@ def _resolve_chunk(
     if op.opcode == OP_REF:
         chunk = genome.get_chunk(digest)
         if chunk is not None:
+            if _sha256_bytes(chunk) != digest:
+                raise DecodeError(
+                    "Chunk hash mismatch for"
+                    f" {digest.hex()}",
+                    next_action=ACTION_CHECK_GENOME,
+                )
             return chunk
         chunk = raw_payloads.get(op.hash_index)
         if chunk is not None:
+            if _sha256_bytes(chunk) != digest:
+                raise DecodeError(
+                    "RAW payload hash mismatch"
+                    f" for {digest.hex()}",
+                    next_action=(
+                        ACTION_REFETCH_SEED
+                    ),
+                )
             return chunk
         raise DecodeError(
             f"Missing required chunk: {digest.hex()}",
@@ -389,9 +404,21 @@ def _resolve_chunk(
 
     chunk = raw_payloads.get(op.hash_index)
     if chunk is not None:
+        if _sha256_bytes(chunk) != digest:
+            raise DecodeError(
+                "RAW payload hash mismatch"
+                f" for {digest.hex()}",
+                next_action=ACTION_REFETCH_SEED,
+            )
         return chunk
     chunk = genome.get_chunk(digest)
     if chunk is not None:
+        if _sha256_bytes(chunk) != digest:
+            raise DecodeError(
+                "Chunk hash mismatch for"
+                f" {digest.hex()}",
+                next_action=ACTION_CHECK_GENOME,
+            )
         return chunk
     raise DecodeError(
         f"Missing RAW payload and genome chunk: {digest.hex()}",
@@ -926,6 +953,15 @@ def restore_genome(
                             next_action=ACTION_VERIFY_SNAPSHOT,
                         )
                     chunk_hash, size = struct.unpack(">32sI", entry_header)
+                    if size > MAX_CHUNK_SIZE:
+                        raise SeedbraidError(
+                            f"Snapshot chunk size"
+                            f" {size} exceeds limit"
+                            f" {MAX_CHUNK_SIZE}.",
+                            next_action=(
+                                ACTION_VERIFY_SNAPSHOT
+                            ),
+                        )
                     payload = inp.read(size)
                     if len(payload) != size:
                         raise SeedbraidError(
@@ -933,6 +969,17 @@ def restore_genome(
                             " entry payload is"
                             " truncated.",
                             next_action=ACTION_VERIFY_SNAPSHOT,
+                        )
+                    actual = _sha256_bytes(payload)
+                    if actual != chunk_hash:
+                        raise SeedbraidError(
+                            "Snapshot chunk hash"
+                            " mismatch: expected"
+                            f" {chunk_hash.hex()},"
+                            f" got {actual.hex()}",
+                            next_action=(
+                                ACTION_VERIFY_SNAPSHOT
+                            ),
                         )
                     if genome.put_chunk(chunk_hash, payload):
                         inserted += 1
@@ -1063,6 +1110,17 @@ def import_genes(
                 if size == 0:
                     skipped += 1
                     continue
+                actual_digest = _sha256_bytes(chunk)
+                if actual_digest != digest:
+                    raise SeedbraidError(
+                        "Genes pack chunk hash"
+                        " mismatch: expected"
+                        f" {digest.hex()}, got"
+                        f" {actual_digest.hex()}",
+                        next_action=(
+                            ACTION_VERIFY_GENES_PACK
+                        ),
+                    )
                 if genome.put_chunk(digest, chunk):
                     inserted += 1
                 else:

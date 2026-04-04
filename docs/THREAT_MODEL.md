@@ -48,9 +48,18 @@
   SHA-256-verified post-fetch so data integrity is preserved.
   An attacker could deny service by returning errors.
 
+10. Unbounded gateway seed fetch
+- When `--gateway` is provided, `_fetch_from_gateway` calls
+  `response.read()` without a size limit.  A malicious or
+  misconfigured gateway could return a multi-GiB payload,
+  exhausting process memory.
+
 ## Current Mitigations
 - Integrity section validates manifest, recipe, and full payload CRC32.
 - Verify/decode enforce expected output SHA-256.
+- Per-chunk SHA-256 verification is performed at decode time for
+  genome-sourced and IPFS-fetched chunks; any mismatch raises an
+  immediate error.
 - Portable mode is opt-in and defaults off.
 - Optional encrypted wrapper (`SBE1`) protects seed confidentiality at rest/in transit when passphrase is provided.
 - Optional private-manifest mode (`--manifest-private`) reduces exposed metadata fields.
@@ -64,6 +73,10 @@
   seedbraid does not modify kubo listener configuration.
 - `SB_KUBO_API` override is documented as operator responsibility;
   fetched chunk bytes are SHA-256-verified regardless of endpoint.
+- Gateway seed fetches are capped at `MAX_SEED_FETCH_BYTES`
+  (10 MiB) per response; any oversized response raises
+  `ExternalToolError` with code `SB_E_IPFS_FETCH` before
+  the data is held in memory.
 
 ## KDF Cost Parameters
 - SBE1 v2/v3 embed scrypt parameters (n, r, p) in the header; default is n=32768, r=8, p=1.
@@ -81,6 +94,35 @@
   This is a stronger binding than the external HMAC approach because authentication
   is integral to the decryption primitive.
 - SBE1 v1 seeds use implicit n=16384 and remain decryptable for backward compatibility.
+
+## Additional Mitigations (T-035)
+- **Chunk size limits**: `decode_raw_payloads()` and `restore_genome()` enforce
+  `MAX_CHUNK_SIZE` (128 MiB) per chunk, preventing memory exhaustion from
+  malicious size declarations in untrusted seed/snapshot files.
+- **IPFS fetch size limits**: Gateway chunk fetches are capped at
+  `MAX_CHUNK_FETCH_BYTES` (4 MiB); kubo `/block/get` responses are size-checked
+  post-fetch; kubo `/cat` responses are capped at `MAX_SEED_FETCH_BYTES` (10 MiB).
+- **SBE1 v2 fallback warning**: `encrypt_seed_bytes()` emits `SecurityWarning`
+  when `cryptography` is not installed, alerting users to the legacy non-NIST
+  stream cipher fallback.
+- **PSA CID verification**: Remote pinning responses are checked for CID
+  mismatch between the requested CID and the provider-returned CID, preventing
+  silent CID substitution by compromised providers.
+- **MIME filename sanitization**: `_multipart_body()` strips `"`, `\r`, `\n`,
+  and `\0` from filenames before MIME header interpolation, preventing header
+  injection in kubo API multipart uploads.
+- **SB_KUBO_TIMEOUT validation**: The `_timeout()` helper validates
+  `SB_KUBO_TIMEOUT` as a positive integer, raising `SB_E_INVALID_CONFIG`
+  instead of leaking raw `ValueError` stack traces.
+- **OP_RAW SHA-256 verification**: `_resolve_chunk()` now verifies SHA-256
+  integrity for all `raw_payloads` lookups (OP_RAW and OP_REF fallback),
+  matching the verification already applied to genome-sourced chunks.
+- **Chunk manifest format validation**: `read_chunk_manifest()` validates
+  `hash_hex` as 64-character lowercase hex and `cid` as structurally valid
+  CIDv1 raw codec identifiers, rejecting malformed entries early.
+- **scrypt r/p minimum validation**: `_parse_encrypted_header()` enforces
+  `scrypt_r >= 1` and `scrypt_p >= 1` for v2/v3 envelopes, complementing
+  the existing `scrypt_n` floor check.
 
 ## Limitations
 - CRC32 detects accidental corruption and simple tampering, not cryptographic forgery.

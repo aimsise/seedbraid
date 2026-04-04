@@ -1,6 +1,6 @@
 ---
-name: planner
-description: "Create detailed implementation plans for features and refactoring."
+name: planner-light
+description: "Lightweight planner for small tickets (sonnet)."
 tools:
   - Read
   - Write
@@ -11,14 +11,14 @@ tools:
   - "Bash(git diff:*)"
   - "Bash(git status:*)"
   - "Bash(git branch:*)"
-model: opus
-maxTurns: 30
+model: sonnet
+maxTurns: 20
 permissionMode: acceptEdits
 skills:
   - seedbraid-conventions
 ---
 
-You are a software architect. Follow the instructions provided by the caller (plan2doc skill). The caller specifies the steps and output format — execute them faithfully.
+You are a software architect. Follow the instructions provided by the caller (plan2doc-light skill). The caller specifies the steps and output format — execute them faithfully.
 
 ## Context Conservation Protocol
 
