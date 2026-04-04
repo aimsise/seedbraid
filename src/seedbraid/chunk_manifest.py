@@ -8,13 +8,17 @@ chunk storage workflows.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cid import cidv1_raw_to_sha256
 from .errors import (
     ACTION_REGENERATE_MANIFEST,
     SeedbraidError,
 )
+
+_HEX64_RE = re.compile(r"[0-9a-f]{64}")
 
 __all__ = [
     "MANIFEST_FORMAT",
@@ -186,6 +190,26 @@ def read_chunk_manifest(
                     ACTION_REGENERATE_MANIFEST
                 ),
             )
+        if not _HEX64_RE.fullmatch(h):
+            raise SeedbraidError(
+                f"Chunk entry {i} has"
+                f" invalid hash: {h!r}",
+                code="SB_E_CHUNK_MANIFEST_FORMAT",
+                next_action=(
+                    ACTION_REGENERATE_MANIFEST
+                ),
+            )
+        try:
+            cidv1_raw_to_sha256(c)
+        except ValueError as exc:
+            raise SeedbraidError(
+                f"Chunk entry {i} has"
+                f" invalid CID: {c!r}",
+                code="SB_E_CHUNK_MANIFEST_FORMAT",
+                next_action=(
+                    ACTION_REGENERATE_MANIFEST
+                ),
+            ) from exc
         entries.append(ChunkEntry(
             hash_hex=h,
             cid=c,

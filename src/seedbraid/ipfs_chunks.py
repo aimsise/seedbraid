@@ -37,6 +37,8 @@ from .errors import (
 )
 from .storage import GenomeStorage
 
+MAX_CHUNK_FETCH_BYTES = 4 * 1024 * 1024  # 4 MiB
+
 
 def _fetch_chunk_from_gateway(
     cid: str, gateway: str,
@@ -47,7 +49,21 @@ def _fetch_chunk_from_gateway(
         with urllib.request.urlopen(
             url, timeout=30,
         ) as response:
-            return response.read()  # type: ignore[no-any-return]
+            data: bytes = response.read(
+                MAX_CHUNK_FETCH_BYTES + 1,
+            )
+            if len(data) > MAX_CHUNK_FETCH_BYTES:
+                raise ExternalToolError(
+                    "Gateway chunk response"
+                    f" for CID {cid} exceeds"
+                    f" {MAX_CHUNK_FETCH_BYTES}"
+                    " bytes.",
+                    code="SB_E_IPFS_CHUNK_GET",
+                    next_action=(
+                        ACTION_CHECK_IPFS_NETWORK
+                    ),
+                )
+            return data
     except (
         urllib.error.URLError,
         OSError,
@@ -118,6 +134,19 @@ class IPFSChunkStorage:
                 data = ipfs_http.post_raw(
                     "/block/get", arg=cid,
                 )
+                if len(data) > MAX_CHUNK_FETCH_BYTES:
+                    raise ExternalToolError(
+                        "IPFS block/get response"
+                        f" for CID {cid} exceeds"
+                        f" {MAX_CHUNK_FETCH_BYTES}"
+                        " bytes.",
+                        code=(
+                            "SB_E_IPFS_CHUNK_GET"
+                        ),
+                        next_action=(
+                            ACTION_CHECK_IPFS_DAEMON
+                        ),
+                    )
                 actual = hashlib.sha256(data).digest()
                 if actual != chunk_hash:
                     raise ExternalToolError(

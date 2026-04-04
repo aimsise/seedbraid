@@ -33,9 +33,32 @@ def api_base_url() -> str:
 
 def _timeout() -> int:
     """Return request timeout from SB_KUBO_TIMEOUT or default."""
-    return int(
-        os.environ.get("SB_KUBO_TIMEOUT", _DEFAULT_TIMEOUT)
+    raw = os.environ.get(
+        "SB_KUBO_TIMEOUT", str(_DEFAULT_TIMEOUT),
     )
+    try:
+        val = int(raw)
+    except ValueError:
+        raise ExternalToolError(
+            f"SB_KUBO_TIMEOUT={raw!r}"
+            " is not a valid integer.",
+            code="SB_E_INVALID_CONFIG",
+            next_action=(
+                "Set SB_KUBO_TIMEOUT to a"
+                " positive integer (seconds)."
+            ),
+        )
+    if val <= 0:
+        raise ExternalToolError(
+            f"SB_KUBO_TIMEOUT={val}"
+            " must be a positive integer.",
+            code="SB_E_INVALID_CONFIG",
+            next_action=(
+                "Set SB_KUBO_TIMEOUT to a"
+                " positive integer (seconds)."
+            ),
+        )
+    return val
 
 
 def _build_url(
@@ -113,6 +136,13 @@ def post_raw(
     return _execute(req)
 
 
+def _sanitize_filename(filename: str) -> str:
+    """Strip characters that could inject MIME headers."""
+    for ch in ('"', "\r", "\n", "\0"):
+        filename = filename.replace(ch, "")
+    return filename
+
+
 def _multipart_body(
     field_name: str,
     data: bytes,
@@ -120,11 +150,12 @@ def _multipart_body(
     boundary: str,
 ) -> bytes:
     """Build multipart/form-data body."""
+    safe = _sanitize_filename(filename)
     header = (
         f"--{boundary}\r\n"
         f"Content-Disposition: form-data;"
         f' name="{field_name}";'
-        f' filename="{filename}"\r\n'
+        f' filename="{safe}"\r\n'
         f"Content-Type: application/octet-stream"
         f"\r\n\r\n"
     ).encode()

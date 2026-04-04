@@ -149,7 +149,7 @@ def test_get_chunk_gateway_fallback(
         def __exit__(self, *a):  # noqa: ANN001, ANN201
             return False
 
-        def read(self) -> bytes:
+        def read(self, n: int = -1) -> bytes:
             return self._data
 
     def _fake_urlopen(url, timeout=30):  # noqa: ANN001, ANN202
@@ -218,7 +218,7 @@ def test_get_chunk_gateway_rejects_mismatched_hash(
         def __exit__(self, *a):  # noqa: ANN001, ANN201
             return False
 
-        def read(self) -> bytes:
+        def read(self, n: int = -1) -> bytes:
             return b"tampered"
 
     def _fail(path, **params):  # noqa: ANN001, ANN003, ANN202

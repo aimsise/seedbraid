@@ -16,6 +16,7 @@ from seedbraid.chunk_manifest import (
     read_chunk_manifest,
     write_chunk_manifest,
 )
+from seedbraid.cid import sha256_to_cidv1_raw
 from seedbraid.errors import SeedbraidError
 
 _SAMPLE_HASH = (
@@ -105,7 +106,10 @@ def test_roundtrip_multiple_chunks(
     entries = tuple(
         ChunkEntry(
             hash_hex=f"{i:0>64x}",
-            cid=f"bafkrei{'x' * 50}{i}",
+            cid=sha256_to_cidv1_raw(
+                bytes.fromhex(f"{i:0>64x}"),
+                is_digest=True,
+            ),
         )
         for i in range(3)
     )

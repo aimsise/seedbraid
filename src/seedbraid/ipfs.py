@@ -196,6 +196,18 @@ def fetch_seed(
     for attempt in range(1, retries + 1):
         try:
             blob = ipfs_http.post_raw("/cat", arg=cid)
+            if len(blob) > MAX_SEED_FETCH_BYTES:
+                raise ExternalToolError(
+                    f"ipfs cat response for CID"
+                    f" {cid} exceeds"
+                    f" {MAX_SEED_FETCH_BYTES}"
+                    " bytes.",
+                    code="SB_E_IPFS_FETCH",
+                    next_action=(
+                        "Verify the CID points"
+                        " to a valid seed file."
+                    ),
+                )
             _validate_fetched_seed_blob(cid, out_path, blob)
             return
         except ExternalToolError as exc:

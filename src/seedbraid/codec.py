@@ -17,6 +17,7 @@ from typing import Any
 
 from .chunking import ChunkerConfig, iter_chunks
 from .container import (
+    MAX_CHUNK_SIZE,
     OP_RAW,
     OP_REF,
     Recipe,
@@ -387,6 +388,14 @@ def _resolve_chunk(
             return chunk
         chunk = raw_payloads.get(op.hash_index)
         if chunk is not None:
+            if _sha256_bytes(chunk) != digest:
+                raise DecodeError(
+                    "RAW payload hash mismatch"
+                    f" for {digest.hex()}",
+                    next_action=(
+                        ACTION_REFETCH_SEED
+                    ),
+                )
             return chunk
         raise DecodeError(
             f"Missing required chunk: {digest.hex()}",
@@ -395,6 +404,12 @@ def _resolve_chunk(
 
     chunk = raw_payloads.get(op.hash_index)
     if chunk is not None:
+        if _sha256_bytes(chunk) != digest:
+            raise DecodeError(
+                "RAW payload hash mismatch"
+                f" for {digest.hex()}",
+                next_action=ACTION_REFETCH_SEED,
+            )
         return chunk
     chunk = genome.get_chunk(digest)
     if chunk is not None:
@@ -938,6 +953,15 @@ def restore_genome(
                             next_action=ACTION_VERIFY_SNAPSHOT,
                         )
                     chunk_hash, size = struct.unpack(">32sI", entry_header)
+                    if size > MAX_CHUNK_SIZE:
+                        raise SeedbraidError(
+                            f"Snapshot chunk size"
+                            f" {size} exceeds limit"
+                            f" {MAX_CHUNK_SIZE}.",
+                            next_action=(
+                                ACTION_VERIFY_SNAPSHOT
+                            ),
+                        )
                     payload = inp.read(size)
                     if len(payload) != size:
                         raise SeedbraidError(
