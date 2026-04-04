@@ -48,6 +48,12 @@
   SHA-256-verified post-fetch so data integrity is preserved.
   An attacker could deny service by returning errors.
 
+10. Unbounded gateway seed fetch
+- When `--gateway` is provided, `_fetch_from_gateway` calls
+  `response.read()` without a size limit.  A malicious or
+  misconfigured gateway could return a multi-GiB payload,
+  exhausting process memory.
+
 ## Current Mitigations
 - Integrity section validates manifest, recipe, and full payload CRC32.
 - Verify/decode enforce expected output SHA-256.
@@ -67,6 +73,10 @@
   seedbraid does not modify kubo listener configuration.
 - `SB_KUBO_API` override is documented as operator responsibility;
   fetched chunk bytes are SHA-256-verified regardless of endpoint.
+- Gateway seed fetches are capped at `MAX_SEED_FETCH_BYTES`
+  (10 MiB) per response; any oversized response raises
+  `ExternalToolError` with code `SB_E_IPFS_FETCH` before
+  the data is held in memory.
 
 ## KDF Cost Parameters
 - SBE1 v2/v3 embed scrypt parameters (n, r, p) in the header; default is n=32768, r=8, p=1.

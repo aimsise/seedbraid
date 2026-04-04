@@ -82,7 +82,9 @@ def test_fetch_uses_gateway_fallback_after_retry_exhaustion(
         def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN201
             return False
 
-        def read(self) -> bytes:
+        def read(self, n=None) -> bytes:  # noqa: ANN001
+            if n is not None:
+                return self._data[:n]
             return self._data
 
     def _fake_urlopen(url, timeout=30):  # noqa: ANN001, ANN202
@@ -175,3 +177,100 @@ def test_pin_health_cli_exit_codes(monkeypatch) -> None:
     miss = runner.invoke(app, ["pin-health", "bafy-miss"])
     assert miss.exit_code == 1
     assert "reason=not pinned" in miss.output
+
+
+def test_fetch_from_gateway_rejects_oversized_response(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Gateway response exceeding MAX_SEED_FETCH_BYTES
+    is rejected before validation."""
+    from seedbraid.ipfs import MAX_SEED_FETCH_BYTES
+
+    huge = b"x" * (MAX_SEED_FETCH_BYTES + 1)
+    out = tmp_path / "out.sbd"
+
+    class _Resp:
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, *a):  # noqa: ANN002, ANN204
+            return False
+
+        def read(self, n=None):  # noqa: ANN001, ANN202
+            if n is not None:
+                return huge[:n]
+            return huge
+
+    def _always_fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "offline",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_raw", _always_fail,
+    )
+    monkeypatch.setattr(
+        "seedbraid.ipfs.urllib.request.urlopen",
+        lambda url, timeout=30: _Resp(),
+    )
+
+    import pytest
+
+    with pytest.raises(
+        ExternalToolError, match="exceeds",
+    ):
+        fetch_seed(
+            "bafy-huge", out,
+            retries=1, backoff_ms=0,
+            gateway="https://gw.example/ipfs",
+        )
+
+
+def test_fetch_from_gateway_accepts_exactly_max_bytes(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Response of exactly MAX_SEED_FETCH_BYTES passes
+    size guard (fails later at validation)."""
+    from seedbraid.ipfs import MAX_SEED_FETCH_BYTES
+
+    exact = b"x" * MAX_SEED_FETCH_BYTES
+    out = tmp_path / "out.sbd"
+
+    class _Resp:
+        def __enter__(self):  # noqa: ANN204
+            return self
+
+        def __exit__(self, *a):  # noqa: ANN002, ANN204
+            return False
+
+        def read(self, n=None):  # noqa: ANN001, ANN202
+            if n is not None:
+                return exact[:n]
+            return exact
+
+    def _always_fail(path, **params):  # noqa: ANN001, ANN003, ANN202
+        raise ExternalToolError(
+            "offline",
+            code="SB_E_KUBO_API_ERROR",
+        )
+
+    monkeypatch.setattr(
+        "seedbraid.ipfs_http.post_raw", _always_fail,
+    )
+    monkeypatch.setattr(
+        "seedbraid.ipfs.urllib.request.urlopen",
+        lambda url, timeout=30: _Resp(),
+    )
+
+    import pytest
+
+    with pytest.raises(
+        ExternalToolError,
+        match="integrity/manifest validation failed",
+    ):
+        fetch_seed(
+            "bafy-exact", out,
+            retries=1, backoff_ms=0,
+            gateway="https://gw.example/ipfs",
+        )
