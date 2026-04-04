@@ -3,6 +3,7 @@ name: security-scanner
 description: "Security audit for crypto, IPFS, container, codec, and pinning code."
 tools:
   - Read
+  - Write
   - Grep
   - Glob
 model: sonnet
