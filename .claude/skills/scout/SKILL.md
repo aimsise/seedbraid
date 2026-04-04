@@ -21,7 +21,10 @@ Investigate and plan: $ARGUMENTS
    - If multiple matches, use the first. If zero matches, skip to step 2 (Size stays unset).
    - If found, read the `| Size |` table row to extract the Size value (S/M/L/XL).
 2. Call `/investigate` with the topic to run codebase research via the researcher agent (sonnet).
-3. If investigate returns a failure status, print the error and stop.
+3. Check the investigate response for failure conditions:
+   - If the response contains `**Status**: failed` or `**Status**: partial`, print the error and stop.
+   - If the response does not contain a research file path (e.g., no `.docs/research/` path), print an error and stop.
+   - Only proceed if `**Status**: success` and a research file path is present.
 4. Print the research summary and file path returned by investigate.
 5. Determine the final Size:
    - If Size was read from the ticket file in step 1, use that value.
@@ -35,5 +38,5 @@ Investigate and plan: $ARGUMENTS
 ## Error Handling
 
 - **Empty arguments**: Print "Usage: /scout <topic or ticket>" and stop.
-- **investigate failure**: Print the error, do NOT proceed to plan2doc.
+- **investigate failure**: If `**Status**: failed` or `**Status**: partial` is present, or no research file path (`.docs/research/` path) is found in the response, print the error and stop. Do NOT proceed to plan2doc.
 - **plan2doc failure**: Print the error and the research file path (research is still valid).
